@@ -29,7 +29,6 @@ async def async_setup_entry(
         name = dev.get("name") or f"U-tec Lock {dev_id}"
         entities.append(UtecLocalLock(dev_id, name, api, entry.entry_id))
 
-    # We don't need update_before_add because entities will poll
     async_add_entities(entities, update_before_add=False)
 
 

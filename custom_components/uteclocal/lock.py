@@ -29,6 +29,7 @@ async def async_setup_entry(
         name = dev.get("name") or f"U-tec Lock {dev_id}"
         entities.append(UtecLocalLock(dev_id, name, api, entry.entry_id))
 
+    # We don't need update_before_add because entities will poll
     async_add_entities(entities, update_before_add=False)
 
 
@@ -50,6 +51,14 @@ class UtecLocalLock(LockEntity):
         self._api = api
         self._is_locked: bool | None = None
         self._battery_level: int | None = None  # 1–5
+        self._health_status: str | None = None
+
+    # ---------- HA metadata ----------
+
+    @property
+    def should_poll(self) -> bool:
+        """Tell Home Assistant to call async_update periodically."""
+        return True
 
     @property
     def is_locked(self) -> bool | None:
@@ -57,10 +66,12 @@ class UtecLocalLock(LockEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose battery level as an attribute."""
+        """Expose battery level and health as attributes."""
         attrs: dict[str, Any] = {}
         if self._battery_level is not None:
             attrs["battery_level"] = self._battery_level
+        if self._health_status is not None:
+            attrs["health_status"] = self._health_status
         return attrs
 
     @property
@@ -72,6 +83,8 @@ class UtecLocalLock(LockEntity):
             via_device=(DOMAIN, "gateway"),
         )
 
+    # ---------- Commands ----------
+
     async def async_lock(self, **kwargs: Any) -> None:
         await self._api.async_lock(self._device_id)
         self._is_locked = True
@@ -82,23 +95,27 @@ class UtecLocalLock(LockEntity):
         self._is_locked = False
         self.async_write_ha_state()
 
+    # ---------- Polling / status ----------
+
     async def async_update(self) -> None:
-        """Query status from the gateway (lock state + battery)."""
+        """Query status from the gateway (lock state + battery + health)."""
         try:
             data = await self._api.async_get_status(self._device_id)
         except Exception:
             # If status fetch fails, keep last known state
             return
 
-        # Expected-ish shape:
+        # Shape based on your sample:
         # {
         #   "payload": {
         #     "devices": [
         #       {
         #         "id": "...",
         #         "states": [
-        #           { "capability": "st.lock", "name": "lockState", "value": "Locked" },
-        #           { "capability": "st.BatteryLevel", "name": "level", "value": 5 },
+        #           {"capability":"st.healthCheck","name":"status","value":"Online"},
+        #           {"capability":"st.lock","name":"lockState","value":"Unlocked"},
+        #           {"capability":"st.lock","name":"lockMode","value":0},
+        #           {"capability":"st.batteryLevel","name":"level","value":5}
         #         ]
         #       }
         #     ]
@@ -117,14 +134,20 @@ class UtecLocalLock(LockEntity):
 
         lock_state: bool | None = None
         battery_level: int | None = None
+        health_status: str | None = None
 
         for s in states:
             cap = (s.get("capability") or "").lower()
             name = (s.get("name") or s.get("attribute") or "").lower()
             value = s.get("value")
 
+            # Health
+            if cap == "st.healthcheck" and name == "status":
+                if isinstance(value, str):
+                    health_status = value
+
             # Lock state
-            if cap == "st.lock" and name in ("lockstate", "state"):
+            if cap == "st.lock" and name == "lockstate":
                 if isinstance(value, str):
                     v = value.lower()
                     if v == "locked":
@@ -133,11 +156,7 @@ class UtecLocalLock(LockEntity):
                         lock_state = False
 
             # Battery
-            if cap in ("st.batterylevel", "battery") and name in (
-                "level",
-                "batterylevel",
-                "battery",
-            ):
+            if cap == "st.batterylevel" and name == "level":
                 try:
                     battery_level = int(value)
                 except (TypeError, ValueError):
@@ -147,3 +166,5 @@ class UtecLocalLock(LockEntity):
             self._is_locked = lock_state
         if battery_level is not None:
             self._battery_level = battery_level
+        if health_status is not None:
+            self._health_status = health_status

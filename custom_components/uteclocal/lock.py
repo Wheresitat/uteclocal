@@ -29,6 +29,7 @@ async def async_setup_entry(
         name = dev.get("name") or f"U-tec Lock {dev_id}"
         entities.append(UtecLocalLock(dev_id, name, api, entry.entry_id))
 
+    # async_update will be called once when added (async_added_to_hass)
     async_add_entities(entities, update_before_add=False)
 
 
@@ -58,6 +59,10 @@ class UtecLocalLock(LockEntity):
     def should_poll(self) -> bool:
         """Tell Home Assistant to call async_update periodically."""
         return True
+
+    async def async_added_to_hass(self) -> None:
+        """Run an initial status query as soon as the entity is added."""
+        await self.async_update()
 
     @property
     def is_locked(self) -> bool | None:
@@ -104,7 +109,7 @@ class UtecLocalLock(LockEntity):
             # If status fetch fails, keep last known state
             return
 
-        # Shape based on your sample:
+        # Based on your sample payload:
         # {
         #   "payload": {
         #     "devices": [

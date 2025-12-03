@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  uteclocal:
+    build: ./gateway
+    container_name: uteclocal
+    ports:
+      - "8124:8124"
+    environment:
+      - UTECLocal_PORT=8124
+      - UTECLocal_LOG_LEVEL=INFO
+    volumes:
+      - uteclocal-data:/data
+    restart: unless-stopped
+volumes:
+  uteclocal-data:

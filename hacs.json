@@ -1,0 +1,8 @@
+{
+  "name": "U-tec Local Gateway",
+  "render_readme": true,
+  "domains": [
+    "lock"
+  ],
+  "homeassistant": "2024.6.0"
+}

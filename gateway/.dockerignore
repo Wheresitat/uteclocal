@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.pyo
+*.dist-info
+.env
+venv
+.pytest_cache
+.mypy_cache
+__data__

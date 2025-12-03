@@ -1,3 +1,3 @@
 DOMAIN="uteclocal"
-DEFAULT_HOST="http://batdock:8000"
+DEFAULT_HOST="http://localhost:8000"
 DEFAULT_SCAN_INTERVAL=30

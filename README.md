@@ -44,10 +44,10 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    scope (if your account uses one, e.g., `enterprise`), and the exact redirect
    URL you registered for the app, then hit **Save** or directly **Start OAuth**
    to launch the authorization URL in a new tab. Use the documented cloud host
-   `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
+   `https://openapi.u-tec.com` (the previous placeholder `https://api.utec.com`
    can cause name-resolution errors). Existing configs that still reference the
-   legacy `openapi.u-tec.com` host are automatically rewritten to
-   `https://openapi.ultraloq.com` on startup; refresh the UI to confirm the saved
+   deprecated `openapi.ultraloq.com` hostname are automatically rewritten to
+   `https://openapi.u-tec.com` on startup; refresh the UI to confirm the saved
    value. The settings are stored in
    `/data/config.json` inside the volume and can be managed entirely through the
    UI—no environment file is required. Use **List Devices** to confirm the API

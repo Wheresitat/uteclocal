@@ -24,8 +24,8 @@ CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "gateway.log"
 
 DEFAULT_CONFIG: GatewayConfig = {
-    # U-tec Open API per public docs: https://openapi.ultraloq.com
-    "base_url": "https://openapi.ultraloq.com",
+    # U-tec Open API per public docs: https://openapi.u-tec.com
+    "base_url": "https://openapi.u-tec.com",
     "access_key": "",
     "secret_key": "",
     "auth_code": "",
@@ -47,6 +47,10 @@ def normalize_base_url(url: str) -> str:
     cleaned = (url or "").strip()
     if not cleaned:
         return DEFAULT_CONFIG["base_url"]
+    if "openapi.ultraloq.com" in cleaned:
+        # Migrate the legacy hostname that fails DNS resolution to the
+        # documented endpoint used by the OAuth/auth flows.
+        cleaned = cleaned.replace("openapi.ultraloq.com", "openapi.u-tec.com")
     if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
         cleaned = "https://" + cleaned
     return cleaned
@@ -65,7 +69,7 @@ def load_config() -> GatewayConfig:
         config.update(loaded)
 
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
-    # errors from the legacy "openapi.u-tec.com" host are avoided.
+    # errors from the deprecated "openapi.ultraloq.com" host are avoided.
     normalized_base = normalize_base_url(config.get("base_url", ""))
     needs_save = False
     if not config.get("base_url") or config.get("base_url") != normalized_base:

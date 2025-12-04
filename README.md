@@ -45,16 +45,23 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    ```bash
    docker run -d \
      --name uteclocal-gateway \
-     -p 8000:8000 \
+     -p 8000:8000 \              # map container port 8000 to host port 8000 (change left side to 80 if you prefer http://<host>/)
+     -e GATEWAY_PORT=8000 \      # optional: change to 80 if you want the container to listen on port 80 internally
      -v uteclocal-data:/data \
      uteclocal-gateway
    ```
-3. Open the UI at `http://<host>:8000/`, enter your U-tec API base URL,
-   access key, secret key, and scope, and hit **Save**. Use the documented
-   cloud host `https://openapi.ultraloq.com` (the previous placeholder
-   `https://api.utec.com` can cause name-resolution errors). The settings are
-   stored in `/data/config.json` inside the volume. Use **Clear Logs** to wipe
-   the rotating log file.
+   Or use the included Compose file (will build the image if needed):
+   ```bash
+   docker compose up -d
+   ```
+   Either way, the UI is reachable at `http://<host>:<port>/`, where `<port>`
+   is the host-side port you mapped above.
+3. Open the UI and enter your U-tec API base URL, access key, secret key, and
+   scope, then hit **Save**. Use the documented cloud host
+   `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
+   can cause name-resolution errors). The settings are stored in
+   `/data/config.json` inside the volume. Use **Clear Logs** to wipe the rotating
+   log file.
 
 If you prefer to pull an already-built image instead of building locally, tag
 and push `utec-local-gateway` to your registry of choice, then run the same
@@ -73,6 +80,15 @@ and push `utec-local-gateway` to your registry of choice, then run the same
   a HACS download, you will not see `Dockerfile` or `gateway/`. Those files are
   only in the full repository—clone it to another folder (outside your HA
   config) and build the image there.
+
+**Troubleshooting connectivity**
+- Run `docker ps` and confirm a container named `uteclocal-gateway` (or your
+  chosen name) is `Up`.
+- Check logs with `docker logs uteclocal-gateway` to confirm Uvicorn started on
+  the expected host/port and that no errors occurred.
+- Verify network reachability with `curl http://<host>:<port>/health` from a
+  machine on the same network. A JSON `{"status":"ok"}` response confirms the
+  gateway is running and reachable.
 
 ### Gateway endpoints
 - `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`

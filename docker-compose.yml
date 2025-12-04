@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  gateway:
+    image: uteclocal-gateway
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - uteclocal-data:/data
+    restart: unless-stopped
+volumes:
+  uteclocal-data:

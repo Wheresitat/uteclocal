@@ -14,4 +14,7 @@ COPY gateway /app/gateway
 EXPOSE 8000
 VOLUME ["/data"]
 
-CMD ["uvicorn", "gateway.app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV GATEWAY_HOST=0.0.0.0 \
+    GATEWAY_PORT=8000
+
+CMD ["sh", "-c", "uvicorn gateway.app:app --host ${GATEWAY_HOST:-0.0.0.0} --port ${GATEWAY_PORT:-8000}"]

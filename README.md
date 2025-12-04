@@ -6,7 +6,8 @@ Custom integration to expose U-tec locks via a local gateway.
 - A **Dockerized FastAPI gateway** that proxies the U-tec open API and exposes
   Home Assistant–friendly endpoints (`/api/devices`, `/api/status`, `/lock`,
   `/unlock`). The gateway includes a lightweight UI for entering your API
-  base URL, access key, secret key, and scope, plus buttons to clear/view logs.
+  base URL, access key, secret key, scope, and redirect URL, plus buttons to
+  trigger OAuth, list devices, and clear/view logs.
 - A **HACS-compatible custom integration** that talks to the gateway and
   surfaces your locks as entities (lock/unlock, battery level, health).
 
@@ -39,17 +40,18 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    reach it on `http://<host>/`). If you previously launched an unrelated stack
    and want to ensure only the gateway is running, you can stop this project
    with `docker compose -p uteclocal down` before starting it again.
-3. Open the UI and enter your U-tec API base URL, access key, secret key, and
-   scope (if your account uses one, e.g., `enterprise`), then hit **Save**. Use
-   the documented cloud host
+3. Open the UI and enter your U-tec API base URL, access key, secret key,
+   scope (if your account uses one, e.g., `enterprise`), and the exact redirect
+   URL you registered for the app, then hit **Save** or directly **Start OAuth**
+   to launch the authorization URL in a new tab. Use the documented cloud host
    `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
    can cause name-resolution errors). Existing configs that still reference the
    legacy `openapi.u-tec.com` host are automatically rewritten to
    `https://openapi.ultraloq.com` on startup; refresh the UI to confirm the saved
    value. The settings are stored in
    `/data/config.json` inside the volume and can be managed entirely through the
-   UI—no environment file is required. Use **Clear Logs** to wipe the rotating
-   log file.
+   UI—no environment file is required. Use **List Devices** to confirm the API
+   responds with your locks, and **Clear Logs** to wipe the rotating log file.
 
 **Troubleshooting connectivity**
 - Run `docker compose ps` and confirm the `gateway` service is `running`.

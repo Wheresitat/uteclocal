@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from string import Template
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import Body, FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,7 +44,10 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 label { display: block; margin-top: 0.5rem; }
                 input[type=text], input[type=password] { width: 24rem; }
                 .logs { margin-top: 1.5rem; padding: 1rem; border: 1px solid #ccc; background: #f9f9f9; max-height: 300px; overflow-y: auto; }
-                .actions { margin-top: 1rem; }
+                .actions { margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+                .section { margin-top: 1.5rem; padding: 1rem; border: 1px solid #ddd; background: #fcfcfc; }
+                .muted { color: #555; font-size: 0.9rem; }
+                ul.devices { padding-left: 1.25rem; }
             </style>
         </head>
         <body>
@@ -57,12 +61,20 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     <input type="text" name="scope" value="$scope" placeholder="e.g. enterprise" />
                     <small>Required for enterprise/tenant accounts; leave blank for personal accounts.</small>
                 </label>
+                <label>Redirect URL<br/><input type="text" name="redirect_url" value="$redirect_url" placeholder="https://your-app/callback" /></label>
+                <p class="muted">Redirect URL must exactly match what you registered for the app in the U-tec console.</p>
                 <label>Log Level<br/><input type="text" name="log_level" value="$log_level" /></label>
                 <div class="actions">
                     <button type="submit">Save</button>
+                    <button type="button" id="start-oauth">Start OAuth</button>
+                    <button type="button" id="fetch-devices">List Devices</button>
                     <button type="button" id="clear-logs">Clear Logs</button>
                 </div>
             </form>
+            <div class="section">
+                <strong>Devices</strong>
+                <div id="devices" class="muted">No devices fetched yet.</div>
+            </div>
             <div class="logs">
                 <strong>Recent Logs</strong><br/>
                 <div id="logs">$logs_html</div>
@@ -81,6 +93,59 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     await fetch('/logs/clear', { method: 'POST' });
                     window.location.reload();
                 });
+
+                document.getElementById('start-oauth').addEventListener('click', async () => {
+                    const data = new FormData(form);
+                    const base_url = data.get('base_url');
+                    const access_key = data.get('access_key');
+                    const redirect_url = data.get('redirect_url');
+                    const scope = data.get('scope');
+                    if (!base_url || !access_key || !redirect_url) {
+                        alert('Base URL, Access Key, and Redirect URL are required to build the OAuth link.');
+                        return;
+                    }
+                    const resp = await fetch('/oauth/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ base_url, access_key, redirect_url, scope })
+                    });
+                    const payload = await resp.json();
+                    if (resp.ok && payload.authorize_url) {
+                        window.open(payload.authorize_url, '_blank');
+                    } else {
+                        alert(payload.detail || 'Unable to start OAuth flow');
+                    }
+                });
+
+                document.getElementById('fetch-devices').addEventListener('click', async () => {
+                    const devicesDiv = document.getElementById('devices');
+                    devicesDiv.textContent = 'Loading devices...';
+                    try {
+                        const resp = await fetch('/api/devices');
+                        const payload = await resp.json();
+                        if (!resp.ok) {
+                            devicesDiv.textContent = payload.detail || 'Failed to load devices';
+                            return;
+                        }
+                        const devices = (payload.payload && payload.payload.devices) || [];
+                        if (!devices.length) {
+                            devicesDiv.textContent = 'No devices returned by the API.';
+                            return;
+                        }
+                        const list = document.createElement('ul');
+                        list.className = 'devices';
+                        devices.forEach((dev) => {
+                            const li = document.createElement('li');
+                            const name = dev.name || dev.device_name || dev.device_id || 'Unknown device';
+                            const id = dev.id || dev.device_id || dev.serial_no || '';
+                            li.textContent = id ? `${name} (${id})` : name;
+                            list.appendChild(li);
+                        });
+                        devicesDiv.replaceChildren(list);
+                    } catch (err) {
+                        devicesDiv.textContent = 'Error loading devices: ' + err;
+                    }
+                });
             </script>
         </body>
         </html>
@@ -91,6 +156,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         access_key=config.get("access_key", ""),
         secret_key=config.get("secret_key", ""),
         scope=config.get("scope", ""),
+        redirect_url=config.get("redirect_url", ""),
         log_level=config.get("log_level", "INFO"),
         logs_html=logs_html or "No logs yet.",
     )
@@ -116,6 +182,7 @@ async def update_config(
         "access_key": access_key,
         "secret_key": secret_key,
         "scope": scope,
+        "redirect_url": redirect_url,
         "log_level": log_level,
     }
     save_config(config)
@@ -196,3 +263,27 @@ async def api_unlock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         return result or {"status": "ok"}
     finally:
         await client.aclose()
+
+
+@app.post("/oauth/start")
+async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+    base_url = (payload.get("base_url") or "").strip()
+    access_key = (payload.get("access_key") or "").strip()
+    redirect_url = (payload.get("redirect_url") or "").strip()
+    scope = (payload.get("scope") or "").strip() or "user"
+
+    if not base_url or not access_key or not redirect_url:
+        raise HTTPException(status_code=400, detail="base_url, access_key, and redirect_url are required")
+
+    params = urlencode(
+        {
+            "response_type": "code",
+            "client_id": access_key,
+            "redirect_uri": redirect_url,
+            "scope": scope,
+            "state": "uteclocal",
+        }
+    )
+    authorize_url = f"{base_url.rstrip('/')}/oauth/authorize?{params}"
+    logging.getLogger(__name__).info("Generated OAuth authorize URL for redirect %s", redirect_url)
+    return JSONResponse({"authorize_url": authorize_url})

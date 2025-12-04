@@ -305,6 +305,19 @@ async def api_devices() -> dict[str, Any]:
         devices = await client.fetch_devices()
         log.info("Fetched %d devices", len(devices))
         return {"payload": {"devices": devices}}
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text
+        log.warning("Device fetch failed (%s): %s", exc.response.status_code, body[:500])
+        return JSONResponse(
+            status_code=exc.response.status_code,
+            content={"detail": body or exc.response.reason_phrase},
+        )
+    except ValueError as exc:
+        log.warning("Device fetch returned non-JSON response")
+        return JSONResponse(status_code=502, content={"detail": "Cloud response was not JSON"})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.exception("Unexpected error fetching devices")
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
     finally:
         await client.aclose()
 

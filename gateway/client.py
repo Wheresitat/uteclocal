@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 import httpx
 
 from .config import GatewayConfig
@@ -20,7 +22,7 @@ class UtecCloudClient:
         self._client = httpx.AsyncClient(timeout=15.0)
 
     def _headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"Accept": "application/json"}
         token = (self._config.get("access_token") or "").strip()
         token_type = (self._config.get("token_type") or "Bearer").strip()
         if token:
@@ -36,9 +38,13 @@ class UtecCloudClient:
 
     async def fetch_devices(self) -> list[dict[str, Any]]:
         url = f"{self._config['base_url'].rstrip('/')}/devices"
-        resp = await self._client.get(url, headers=self._headers())
+        resp = await self._client.get(url, headers=self._headers(), follow_redirects=True)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError:
+            logging.getLogger(__name__).warning("Device list was not JSON: %s", resp.text[:500])
+            raise
         if isinstance(data, dict):
             return data.get("devices") or data.get("payload", {}).get("devices", []) or []
         if isinstance(data, list):
@@ -47,16 +53,20 @@ class UtecCloudClient:
 
     async def fetch_status(self, device_id: str) -> dict[str, Any]:
         url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/status"
-        resp = await self._client.get(url, headers=self._headers())
+        resp = await self._client.get(url, headers=self._headers(), follow_redirects=True)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError:
+            logging.getLogger(__name__).warning("Status response was not JSON: %s", resp.text[:500])
+            raise
         if isinstance(data, dict):
             return data
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
         url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/{target}"
-        resp = await self._client.post(url, headers=self._headers())
+        resp = await self._client.post(url, headers=self._headers(), follow_redirects=True)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 

@@ -5,6 +5,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed or not on PATH. Install Docker Engine first: https://docs.docker.com/engine/install/" >&2
+  exit 1
+fi
+
 if [[ ! -f Dockerfile ]]; then
   echo "Dockerfile not found. Make sure you cloned the full repo and are running from $PROJECT_ROOT" >&2
   exit 1

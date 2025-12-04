@@ -36,6 +36,11 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    # or run the helper, which checks that Dockerfile and gateway/ are present
    ./scripts/build_gateway.sh
    ```
+   If you do not want to clone locally, you can also ask Docker to pull the
+   repo as the build context directly:
+   ```bash
+   docker build -t uteclocal-gateway https://github.com/Wheresitat/uteclocal.git#main
+   ```
 2. Run the container and persist its config/logs in `/data`:
    ```bash
    docker run -d \
@@ -59,6 +64,9 @@ and push `utec-local-gateway` to your registry of choice, then run the same
   directory. Re-clone the repo if those are missing.
 - If you see build errors about missing files, run `git pull` to update to the
   latest commit, then retry `./scripts/build_gateway.sh`.
+- If you only see `custom_components/` and `const.py`, you are looking at the
+  HACS download. Either clone the repo (recommended) or use the git-URL build
+  context command shown above so Docker fetches the missing files for you.
 - If you are looking inside your Home Assistant `custom_components/` folder or
   a HACS download, you will not see `Dockerfile` or `gateway/`. Those files are
   only in the full repository—clone it to another folder (outside your HA

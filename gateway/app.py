@@ -72,8 +72,8 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
                 <label>Scope<br/>
-                    <input type="text" name="scope" value="$scope" placeholder="e.g. enterprise" />
-                    <small>Required for enterprise/tenant accounts; leave blank for personal accounts.</small>
+                    <input type="text" name="scope" value="$scope" placeholder="openapi" />
+                    <small>Per U-tec docs use <code>openapi</code>; enterprise tenants may require a specific scope.</small>
                 </label>
                 <label>Redirect URL<br/><input type="text" name="redirect_url" value="$redirect_url" placeholder="https://your-app/callback" /></label>
                 <p class="muted">Redirect URL must exactly match what you registered for the app in the U-tec console.</p>
@@ -124,16 +124,17 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     const base_url = data.get('base_url');
                     const oauth_base_url = data.get('oauth_base_url');
                     const access_key = data.get('access_key');
+                    const secret_key = data.get('secret_key');
                     const redirect_url = data.get('redirect_url');
                     const scope = data.get('scope');
-                    if (!base_url || !oauth_base_url || !access_key || !redirect_url) {
-                        alert('Base URL, OAuth Base URL, Access Key, and Redirect URL are required to build the OAuth link.');
+                    if (!base_url || !oauth_base_url || !access_key || !secret_key || !redirect_url) {
+                        alert('Base URL, OAuth Base URL, Access Key, Secret Key, and Redirect URL are required to build the OAuth link.');
                         return;
                     }
                     const resp = await fetch('/oauth/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ base_url, oauth_base_url, access_key, redirect_url, scope })
+                        body: JSON.stringify({ base_url, oauth_base_url, access_key, secret_key, redirect_url, scope })
                     });
                     const payload = await resp.json();
                     if (resp.ok && payload.authorize_url) {
@@ -146,7 +147,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 function parseAuthCode(urlStr) {
                     try {
                         const parsed = new URL(urlStr);
-                        return parsed.searchParams.get('code');
+                        return parsed.searchParams.get('authorization_code') || parsed.searchParams.get('code');
                     } catch (err) {
                         return '';
                     }
@@ -156,7 +157,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     const urlStr = document.getElementById('callback-url').value;
                     const code = parseAuthCode(urlStr);
                     if (!code) {
-                        alert('No "code" parameter found in the provided URL.');
+                        alert('No "authorization_code" or "code" parameter found in the provided URL.');
                         return;
                     }
                     document.getElementById('auth-code').value = code;
@@ -352,22 +353,26 @@ async def api_unlock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     oauth_base_url = normalize_oauth_base_url(payload.get("oauth_base_url") or "")
     access_key = (payload.get("access_key") or "").strip()
+    secret_key = (payload.get("secret_key") or "").strip()
     redirect_url = (payload.get("redirect_url") or "").strip()
-    scope = (payload.get("scope") or "").strip() or "user"
+    scope = (payload.get("scope") or "").strip() or "openapi"
 
-    if not oauth_base_url or not access_key or not redirect_url:
-        raise HTTPException(status_code=400, detail="oauth_base_url, access_key, and redirect_url are required")
+    if not oauth_base_url or not access_key or not secret_key or not redirect_url:
+        raise HTTPException(
+            status_code=400, detail="oauth_base_url, access_key, secret_key, and redirect_url are required"
+        )
 
     params = urlencode(
         {
             "response_type": "code",
             "client_id": access_key,
+            "client_secret": secret_key,
             "redirect_uri": redirect_url,
             "scope": scope,
             "state": "uteclocal",
         }
     )
-    authorize_url = f"{oauth_base_url.rstrip('/')}/auth?{params}"
+    authorize_url = f"{oauth_base_url.rstrip('/')}/authorize?{params}"
     logging.getLogger(__name__).info("Generated OAuth authorize URL for redirect %s", redirect_url)
     return JSONResponse({"authorize_url": authorize_url})
 
@@ -379,7 +384,7 @@ def _extract_code(code: str | None, callback_url: str | None) -> str:
         return ""
     parsed = urlparse(callback_url)
     params = parse_qs(parsed.query)
-    return params.get("code", [""])[0]
+    return params.get("authorization_code", params.get("code", [""]))[0]
 
 
 @app.post("/oauth/exchange")
@@ -400,10 +405,11 @@ async def oauth_exchange(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     data = {
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": redirect_url,
         "client_id": access_key,
         "client_secret": secret_key,
     }
+    if redirect_url:
+        data["redirect_uri"] = redirect_url
     token_url = f"{oauth_base_url.rstrip('/')}/token"
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.post(token_url, data=data)

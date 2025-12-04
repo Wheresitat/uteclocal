@@ -27,8 +27,8 @@ LOG_PATH = DATA_DIR / "gateway.log"
 DEFAULT_CONFIG: GatewayConfig = {
     # U-tec Open API per public docs: https://openapi.u-tec.com
     "base_url": "https://openapi.u-tec.com",
-    # OAuth host documented for auth/token flow: https://oauth.u-tec.com/login
-    "oauth_base_url": "https://oauth.u-tec.com/login",
+    # OAuth host documented for auth/token flow: https://oauth.u-tec.com
+    "oauth_base_url": "https://oauth.u-tec.com",
     "access_key": "",
     "secret_key": "",
     "auth_code": "",
@@ -37,7 +37,8 @@ DEFAULT_CONFIG: GatewayConfig = {
     "token_type": "Bearer",
     "token_expires_in": 0,
     "log_level": "INFO",
-    "scope": "",
+    # Per docs the OAuth scope should be "openapi"
+    "scope": "openapi",
     "redirect_url": "",
 }
 
@@ -65,6 +66,10 @@ def normalize_oauth_base_url(url: str) -> str:
         return DEFAULT_CONFIG["oauth_base_url"]
     if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
         cleaned = "https://" + cleaned
+    # Previous builds saved the /login suffix; strip it to match the documented host
+    # used by /authorize and /token endpoints.
+    if cleaned.rstrip("/").endswith("/login"):
+        cleaned = cleaned.rstrip("/")[:- len("/login")]
     return cleaned.rstrip("/")
 
 

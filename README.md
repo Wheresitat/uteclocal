@@ -41,19 +41,19 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    and want to ensure only the gateway is running, you can stop this project
    with `docker compose -p uteclocal down` before starting it again.
 3. Open the UI and enter your U-tec API base URL, OAuth base URL, access key,
-   secret key, scope (if your account uses one, e.g., `enterprise`), and the
-   exact redirect URL you registered for the app, then hit **Save** or directly
-   **Start OAuth** to launch the authorization URL in a new tab. Use the
-   documented cloud host `https://openapi.u-tec.com` for API calls (the previous
-   placeholder `https://api.utec.com` can cause name-resolution errors) and the
-   documented OAuth host `https://oauth.u-tec.com/login` so the authorization
-   link matches `https://oauth.u-tec.com/login/auth`. Existing configs that
-   still reference the deprecated `openapi.ultraloq.com` hostname are
-   automatically rewritten to `https://openapi.u-tec.com` on startup; refresh
-   the UI to confirm the saved value. The settings are stored in
-   `/data/config.json` inside the volume and can be managed entirely through the
-   UI—no environment file is required. Use **List Devices** to confirm the API
-   responds with your locks, and **Clear Logs** to wipe the rotating log file.
+   secret key, scope (`openapi` per the docs), and the exact redirect URL you
+   registered for the app, then hit **Save** or directly **Start OAuth** to
+   launch the authorization URL in a new tab. Use the documented cloud host
+   `https://openapi.u-tec.com` for API calls (the previous placeholder
+   `https://api.utec.com` can cause name-resolution errors) and the documented
+   OAuth host `https://oauth.u-tec.com` so the authorization link matches
+   `https://oauth.u-tec.com/authorize`. Existing configs that still reference
+   the deprecated `openapi.ultraloq.com` hostname (or the old `/login` OAuth
+   suffix) are automatically rewritten on startup; refresh the UI to confirm the
+   saved values. The settings are stored in `/data/config.json` inside the volume
+   and can be managed entirely through the UI—no environment file is required.
+   Use **List Devices** to confirm the API responds with your locks, and
+   **Clear Logs** to wipe the rotating log file.
 4. After approving the OAuth prompt, copy the full redirected URL from the
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh

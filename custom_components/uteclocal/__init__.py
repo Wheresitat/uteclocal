@@ -5,8 +5,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
+from .coordinator import async_setup_coordinator
 
-PLATFORMS: list[str] = ["lock"]
+PLATFORMS: list[str] = ["lock", "sensor", "binary_sensor"]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -16,10 +17,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up U-tec Local from a config entry."""
+    host = entry.options.get("host", entry.data.get("host"))
+    coordinator = await async_setup_coordinator(
+        hass,
+        host,
+        entry.options.get("scan_interval") if hasattr(entry, "options") else None,
+    )
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
-        # store host so platforms can grab it
-        "host": entry.data["host"],
+        "host": host,
+        "coordinator": coordinator,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

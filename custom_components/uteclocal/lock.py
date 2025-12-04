@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -7,9 +8,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .api import UtecLocalAPI
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -18,22 +24,30 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up U-tec Local lock entities from a config entry."""
-    host: str = hass.data[DOMAIN][entry.entry_id]["host"]
-    api = UtecLocalAPI(host)
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = data["coordinator"]
+    api = UtecLocalAPI(data["host"])
 
-    devices = await api.async_get_devices()
+    entities: dict[str, UtecLocalLock] = {}
 
-    entities: list[UtecLocalLock] = []
-    for dev in devices:
-        dev_id = str(dev.get("id"))
-        name = dev.get("name") or f"U-tec Lock {dev_id}"
-        entities.append(UtecLocalLock(dev_id, name, api, entry.entry_id))
+    def _sync_entities() -> None:
+        new_entities: list[UtecLocalLock] = []
+        for dev in coordinator.data:
+            dev_id = str(dev.get("id"))
+            if not dev_id or dev_id in entities:
+                continue
+            name = dev.get("name") or f"U-tec Lock {dev_id}"
+            entity = UtecLocalLock(dev_id, name, api, entry.entry_id, coordinator)
+            entities[dev_id] = entity
+            new_entities.append(entity)
+        if new_entities:
+            async_add_entities(new_entities)
 
-    # async_update will be called once when added (async_added_to_hass)
-    async_add_entities(entities, update_before_add=False)
+    _sync_entities()
+    coordinator.async_add_listener(_sync_entities)
 
 
-class UtecLocalLock(LockEntity):
+class UtecLocalLock(CoordinatorEntity, LockEntity):
     """Representation of a U-tec lock exposed via the local gateway."""
 
     _attr_has_entity_name = True
@@ -44,25 +58,26 @@ class UtecLocalLock(LockEntity):
         name: str,
         api: UtecLocalAPI,
         entry_id: str,
+        coordinator,
     ) -> None:
+        super().__init__(coordinator)
         self._device_id = device_id
         self._attr_unique_id = f"{entry_id}_{device_id}"
         self._attr_name = name
         self._api = api
         self._is_locked: bool | None = None
-        self._battery_level: int | None = None  # 1–5
+        self._battery_level: int | None = None
         self._health_status: str | None = None
 
-    # ---------- HA metadata ----------
-
     @property
-    def should_poll(self) -> bool:
-        """Tell Home Assistant to call async_update periodically."""
-        return True
-
-    async def async_added_to_hass(self) -> None:
-        """Run an initial status query as soon as the entity is added."""
-        await self.async_update()
+    def available(self) -> bool:
+        device = self._device_entry
+        if device is None:
+            return self.coordinator.last_update_success
+        available = device.get("available")
+        if available is None:
+            return self.coordinator.last_update_success
+        return bool(available)
 
     @property
     def is_locked(self) -> bool | None:
@@ -70,7 +85,6 @@ class UtecLocalLock(LockEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose battery level and health as attributes."""
         attrs: dict[str, Any] = {}
         if self._battery_level is not None:
             attrs["battery_level"] = self._battery_level
@@ -87,79 +101,66 @@ class UtecLocalLock(LockEntity):
             via_device=(DOMAIN, "gateway"),
         )
 
-    # ---------- Commands ----------
-
     async def async_lock(self, **kwargs: Any) -> None:
-        await self._api.async_lock(self._device_id)
-        self._is_locked = True
-        self.async_write_ha_state()
+        try:
+            await self._api.async_lock(self._device_id)
+        except Exception as exc:  # pragma: no cover - HA logging
+            _LOGGER.error("Failed to lock %s: %s", self._device_id, exc)
+            raise HomeAssistantError(f"Failed to lock {self._device_id}: {exc}") from exc
+        await self.coordinator.async_request_refresh()
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        await self._api.async_unlock(self._device_id)
-        self._is_locked = False
-        self.async_write_ha_state()
-
-    # ---------- Polling / status ----------
-
-    async def async_update(self) -> None:
-        """Query status from the gateway (lock state + battery + health)."""
         try:
-            data = await self._api.async_get_status(self._device_id)
-        except Exception:
-            # If status fetch fails, keep last known state
-            return
+            await self._api.async_unlock(self._device_id)
+        except Exception as exc:  # pragma: no cover - HA logging
+            _LOGGER.error("Failed to unlock %s: %s", self._device_id, exc)
+            raise HomeAssistantError(f"Failed to unlock {self._device_id}: {exc}") from exc
+        await self.coordinator.async_request_refresh()
 
-        # Based on your sample payload:
-        # {
-        #   "payload": {
-        #     "devices": [
-        #       {
-        #         "id": "...",
-        #         "states": [
-        #           {"capability":"st.healthCheck","name":"status","value":"Online"},
-        #           {"capability":"st.lock","name":"lockState","value":"Unlocked"},
-        #           {"capability":"st.lock","name":"lockMode","value":0},
-        #           {"capability":"st.batteryLevel","name":"level","value":5}
-        #         ]
-        #       }
-        #     ]
-        #   }
-        # }
+    @property
+    def _device_payload(self) -> dict[str, Any] | None:
+        entry = self._device_entry
+        if entry:
+            return entry.get("data") or entry
+        return None
+
+    @property
+    def _device_entry(self) -> dict[str, Any] | None:
+        for dev in self.coordinator.data:
+            if str(dev.get("id")) == self._device_id:
+                return dev
+        return None
+
+    @property
+    def _states(self) -> list[dict[str, Any]]:
+        data = self._device_payload or {}
         payload = data.get("payload") or {}
         devices = payload.get("devices") or []
-        if not devices:
-            return
-
-        dev = devices[0]
-        states = dev.get("states") or dev.get("state") or []
-
+        if devices:
+            data = devices[0]
+        states = data.get("states") or data.get("state") or []
         if isinstance(states, dict):
-            states = [states]
+            return [states]
+        return states
 
+    def _handle_coordinator_update(self) -> None:
         lock_state: bool | None = None
         battery_level: int | None = None
         health_status: str | None = None
 
-        for s in states:
+        for s in self._states:
             cap = (s.get("capability") or "").lower()
             name = (s.get("name") or s.get("attribute") or "").lower()
             value = s.get("value")
 
-            # Health
-            if cap == "st.healthcheck" and name == "status":
-                if isinstance(value, str):
-                    health_status = value
-
-            # Lock state
-            if cap == "st.lock" and name == "lockstate":
-                if isinstance(value, str):
-                    v = value.lower()
-                    if v == "locked":
-                        lock_state = True
-                    elif v == "unlocked":
-                        lock_state = False
-
-            # Battery
+            if cap == "st.healthcheck" and name == "status" and isinstance(value, str):
+                health_status = value
+            if cap == "st.lock" and name == "lockstate" and isinstance(value, str):
+                v = value.lower()
+                if v == "locked":
+                    lock_state = True
+                elif v == "unlocked":
+                    lock_state = False
             if cap == "st.batterylevel" and name == "level":
                 try:
                     battery_level = int(value)
@@ -172,3 +173,5 @@ class UtecLocalLock(LockEntity):
             self._battery_level = battery_level
         if health_status is not None:
             self._health_status = health_status
+
+        self.async_write_ha_state()

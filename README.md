@@ -3,68 +3,93 @@
 Custom integration to expose U-tec locks via a local gateway.
 
 ## What this repo provides
-- A **Dockerized FastAPI gateway** that proxies the U-tec open API and exposes
-  Home Assistant–friendly endpoints (`/api/devices`, `/api/status`, `/lock`,
-  `/unlock`). The gateway includes a lightweight UI for entering your API
-  base URL, access key, and secret key, plus buttons to clear/view logs.
-- A **HACS-compatible custom integration** that talks to the gateway and
-  surfaces your locks as entities (lock/unlock, battery level, health).
+- A **FastAPI gateway** that proxies the U-tec OpenAPI, manages OAuth2
+  (start/callback/status), and polls the cloud for devices on a configurable
+  interval. It exposes Home Assistant–friendly endpoints (`/api/status`,
+  `/api/devices`, `/api/devices/{id}`, `/api/devices/{id}/lock`,
+  `/api/devices/{id}/unlock`), serves a configuration/OAuth/device UI, and
+  streams logs via `/api/logs`.
+- A **HACS-compatible custom integration** (`custom_components/uteclocal`) that
+  connects to the gateway and surfaces locks plus battery and online status as
+  Home Assistant entities.
 
-## Install via HACS
-1. Add custom repo: https://github.com/Wheresitat/uteclocal
-2. Category: Integration
-3. Install
-4. Restart HA
-5. Add Integration → 'U-tec Local Gateway'
-6. Enter host of your gateway (default: http://localhost:8000 if you run the
-   Docker container locally)
-
-Your locks will appear as `lock.*` entities if `/api/devices` returns them.
-
-## Run the Dockerized gateway
-1. Build the image
+## Run the gateway with docker compose (no Dockerfile required)
+1. Clone the repository, create a data folder for persisted config/tokens/logs,
+   and review the provided `.env` defaults (edit as needed):
    ```bash
    git clone https://github.com/Wheresitat/uteclocal.git
    cd uteclocal
-   docker build -t uteclocal-gateway ./gateway
+   mkdir -p data
+   # edit .env if you want to change the port/log level
    ```
-2. Run the container and persist its config/logs in `/data`:
+2. Start the container (the compose file uses the official `python:3.12-slim`
+   runtime, mounts the source code into `/app`, installs requirements on boot,
+   and stores persistent data under `./data`):
    ```bash
-   docker run -d \
-     --name uteclocal-gateway \
-     -p 8000:8000 \
-     -v uteclocal-data:/data \
-     uteclocal-gateway
+   docker compose up -d
    ```
-3. Open the UI at `http://<host>:8000/`, enter your U-tec API base URL,
-   access key, and secret key, and hit **Save**. The settings are stored in
-   `/data/config.json` inside the volume. Use **Clear Logs** to wipe the
-   rotating log file.
+3. Open the UI at `http://<host>:8124/`, enter your API base URL, OAuth
+   client ID/secret, optional access/secret keys, and click **Save**. Hit
+   **Start OAuth Flow** to authorize; tokens are stored under `/data/config.json`.
 
-If you prefer to pull an already-built image instead of building locally, tag
-and push `utec-local-gateway` to your registry of choice, then run the same
-`docker run` command above with that image reference.
+### Environment variables (.env)
+- `UTECLocal_PORT` (default `8124`) controls the container port and the
+  uvicorn port.
+- `UTECLocal_LOG_LEVEL` (default `INFO`) sets the gateway log level.
+- `ALLOW_INSECURE_UTEC=1` allows non-HTTPS or private base URLs for testing.
 
-### Gateway endpoints
-- `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`
-- `GET /api/status?id=<device_id>` → returns the raw status payload for the
-  given device
-- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }`
-- `GET /logs` (text), `POST /logs/clear`, `GET /health`
+The included healthcheck probes `http://localhost:<port>/health` and reports an
+error status if the poller or token is unhealthy.
 
-Point the Home Assistant integration at `http://<host>:8000` so it can fetch
+## Run the gateway without Docker
+```bash
+pip install -r requirements.txt
+UTECLocal_PORT=8124 UTECLocal_LOG_LEVEL=DEBUG python main.py
+```
+
+## Gateway endpoints
+- `GET /api/status` → bridge health + OAuth token info
+- `GET /api/devices` → cached devices and latest state from the poller
+- `GET /api/devices/<device_id>` → single device payload
+- `POST /api/devices/<device_id>/lock` and `/api/devices/<device_id>/unlock`
+  (compatibility endpoints `/lock` and `/unlock` remain, expecting
+  `{ "id": "<device_id>" }` in the body)
+- `GET /api/logs` / `DELETE /api/logs` → structured log access
+- OAuth helpers: `GET /auth/start`, `GET /auth/callback`, `GET /auth/status`
+- Health: `GET /health` / `GET /health/ready` → returns 200 only when the poller
+  is running with a valid token and no bridge error
+
+Point the Home Assistant integration at `http://<host>:8124` so it can fetch
 devices and control them.
 
-## Connect to Home Assistant
+## Connect via Home Assistant (HACS)
+1. Add custom repo: https://github.com/Wheresitat/uteclocal (Category:
+   Integration).
+2. Install, restart HA, then **Add Integration → "U-tec Local Gateway"**.
+3. Enter the gateway host/port (default `http://localhost:8124`).
+4. The integration pulls `/api/devices`, exposes `lock.<device>` entities plus
+   sensors for battery/online status, discovers new devices dynamically, and
+   marks entities unavailable if the bridge or device goes unhealthy. You can
+   adjust the scan interval in the integration options and send lock/unlock
+   commands directly from Home Assistant.
 
-Follow these steps if you installed the custom integration via HACS:
+## Development & testing
+- Install dependencies: `pip install -r requirements.txt`.
+- Run unit tests: `python -m unittest discover -s tests -p 'test_*.py'`.
+- Byte-compile check: `python -m compileall gateway custom_components`.
 
-1. In Home Assistant, go to **Settings → Devices & Services → Add Integration**.
-2. Search for **U-tec Local Gateway** (the HACS-installed integration) and
-   select it.
-3. When prompted for the gateway host, enter `http://<host>:8000` (or whatever
-   host/port you mapped in the `docker run` command).
-4. The integration will call the gateway’s `/api/devices` endpoint to discover
-   locks and then expose entities such as `lock.<device>`, plus attributes like
-   battery and status. You can control lock/unlock from the entity controls in
-   Home Assistant.
+## Pushing your work
+To publish changes, add a GitHub remote and push a branch:
+```bash
+git remote add origin https://github.com/<your-username>/uteclocal.git
+git checkout -b feature/my-change
+git push -u origin feature/my-change
+```
+
+If GitHub is unreachable, you can push to a local bare remote for verification:
+```bash
+git init --bare /workspace/uteclocal-remote.git
+git remote add offline /workspace/uteclocal-remote.git
+git checkout -b feature/offline-push
+git push -u offline feature/offline-push
+```

@@ -1,0 +1,22 @@
+services:
+  uteclocal:
+    image: python:3.12-slim
+    container_name: uteclocal
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./data:/data
+    environment:
+      - UTECLocal_PORT=8124
+      - UTECLocal_LOG_LEVEL=INFO
+    command: >-
+      sh -c "python -m pip install --no-cache-dir -r requirements.txt &&
+             uvicorn gateway.app:app --host 0.0.0.0 --port ${UTECLocal_PORT:-8124}"
+    ports:
+      - "${UTECLocal_PORT:-8124}:${UTECLocal_PORT:-8124}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,os,urllib.request,sys;port=os.getenv('UTECLocal_PORT','8124');resp=urllib.request.urlopen(f'http://localhost:{port}/health',timeout=5); data=json.loads(resp.read().decode()); sys.exit(0 if data.get('status')=='ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped

@@ -53,7 +53,10 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <label>API Base URL<br/><input type="text" name="base_url" value="$base_url" required /></label>
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
-                <label>Scope<br/><input type="text" name="scope" value="$scope" /></label>
+                <label>Scope<br/>
+                    <input type="text" name="scope" value="$scope" placeholder="e.g. enterprise" />
+                    <small>Required for enterprise/tenant accounts; leave blank for personal accounts.</small>
+                </label>
                 <label>Log Level<br/><input type="text" name="log_level" value="$log_level" /></label>
                 <div class="actions">
                     <button type="submit">Save</button>

@@ -40,7 +40,8 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    and want to ensure only the gateway is running, you can stop this project
    with `docker compose -p uteclocal down` before starting it again.
 3. Open the UI and enter your U-tec API base URL, access key, secret key, and
-   scope, then hit **Save**. Use the documented cloud host
+   scope (if your account uses one, e.g., `enterprise`), then hit **Save**. Use
+   the documented cloud host
    `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
    can cause name-resolution errors). Existing configs that still reference the
    legacy `openapi.u-tec.com` host are automatically rewritten to

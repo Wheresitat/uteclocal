@@ -1,0 +1,22 @@
+# Reduce Docker build context
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.env
+venv
+.envrc
+.dist
+.eggs
+build
+dist
+.eggs
+.cache
+pytest_cache
+*.egg-info
+.hypothesis
+custom_components
+*.zip
+*.tar.gz

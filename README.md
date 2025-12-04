@@ -22,11 +22,12 @@ Custom integration to expose U-tec locks via a local gateway.
 Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 
 ## Run the Dockerized gateway
-1. Build the image
+1. Build the image (from the repo root)
    ```bash
    git clone https://github.com/Wheresitat/uteclocal.git
    cd uteclocal
-   docker build -t uteclocal-gateway ./gateway
+   # use the repo root as the build context to avoid "path not found" errors
+   docker build -t uteclocal-gateway -f gateway/Dockerfile .
    ```
 2. Run the container and persist its config/logs in `/data`:
    ```bash

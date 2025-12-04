@@ -9,6 +9,7 @@ class GatewayConfig(TypedDict, total=False):
     base_url: str
     oauth_base_url: str
     devices_path: str
+    action_path: str
     access_key: str
     secret_key: str
     auth_code: str
@@ -26,9 +27,11 @@ CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "gateway.log"
 
 DEFAULT_CONFIG: GatewayConfig = {
-    # U-tec Open API per public docs: https://openapi.u-tec.com
-    "base_url": "https://openapi.u-tec.com",
-    # Documented device listing path: https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e
+    # U-tec Open API per public docs: https://api.u-tec.com/action
+    "base_url": "https://api.u-tec.com",
+    # Discovery action endpoint per docs: https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e
+    "action_path": "/action",
+    # Legacy configurable devices path retained for compatibility with earlier builds
     "devices_path": "/openapi/v1/devices",
     # OAuth host documented for auth/token flow: https://oauth.u-tec.com
     "oauth_base_url": "https://oauth.u-tec.com",
@@ -58,6 +61,9 @@ def normalize_base_url(url: str) -> str:
         # Migrate the legacy hostname that fails DNS resolution to the
         # documented endpoint used by the OAuth/auth flows.
         cleaned = cleaned.replace("openapi.ultraloq.com", "openapi.u-tec.com")
+    if "openapi.u-tec.com" in cleaned:
+        # Devices discovery uses the action endpoint on api.u-tec.com
+        cleaned = cleaned.replace("openapi.u-tec.com", "api.u-tec.com")
     if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
         cleaned = "https://" + cleaned
     return cleaned
@@ -68,6 +74,13 @@ def normalize_devices_path(path: str) -> str:
     if not cleaned.startswith("/"):
         cleaned = "/" + cleaned
     return cleaned.rstrip("/") or DEFAULT_CONFIG["devices_path"]
+
+
+def normalize_action_path(path: str) -> str:
+    cleaned = (path or "").strip() or DEFAULT_CONFIG["action_path"]
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned.rstrip("/") or DEFAULT_CONFIG["action_path"]
 
 
 def normalize_oauth_base_url(url: str) -> str:
@@ -100,6 +113,7 @@ def load_config() -> GatewayConfig:
     normalized_base = normalize_base_url(config.get("base_url", ""))
     normalized_oauth_base = normalize_oauth_base_url(config.get("oauth_base_url", ""))
     normalized_devices_path = normalize_devices_path(config.get("devices_path", ""))
+    normalized_action_path = normalize_action_path(config.get("action_path", ""))
     needs_save = False
     if not config.get("base_url") or config.get("base_url") != normalized_base:
         config["base_url"] = normalized_base
@@ -109,6 +123,9 @@ def load_config() -> GatewayConfig:
         needs_save = True
     if not config.get("devices_path") or config.get("devices_path") != normalized_devices_path:
         config["devices_path"] = normalized_devices_path
+        needs_save = True
+    if not config.get("action_path") or config.get("action_path") != normalized_action_path:
+        config["action_path"] = normalized_action_path
         needs_save = True
 
     if needs_save:
@@ -128,6 +145,7 @@ __all__ = [
     "normalize_base_url",
     "normalize_oauth_base_url",
     "normalize_devices_path",
+    "normalize_action_path",
     "load_config",
     "save_config",
     "CONFIG_PATH",

@@ -6,9 +6,9 @@ Custom integration to expose U-tec locks via a local gateway.
 - A **Dockerized FastAPI gateway** that proxies the U-tec open API and exposes
   Home Assistant–friendly endpoints (`/api/devices`, `/api/status`, `/lock`,
   `/unlock`). The gateway includes a lightweight UI for entering your API base
-  URL, OAuth base URL, **device listing path** from the docs, access key, secret
-  key, scope, and redirect URL, plus buttons to trigger OAuth, list devices, and
-  clear/view logs.
+  URL, OAuth base URL, **action endpoint path** from the docs, access key,
+  secret key, scope, and redirect URL, plus buttons to trigger OAuth, list
+  devices, and clear/view logs.
 - A **HACS-compatible custom integration** that talks to the gateway and
   surfaces your locks as entities (lock/unlock, battery level, health).
 
@@ -41,22 +41,22 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    reach it on `http://<host>/`). If you previously launched an unrelated stack
    and want to ensure only the gateway is running, you can stop this project
    with `docker compose -p uteclocal down` before starting it again.
-3. Open the UI and enter your U-tec API base URL, OAuth base URL, **devices
-   endpoint path** (`/openapi/v1/devices` per
+3. Open the UI and enter your U-tec API base URL, OAuth base URL,
+   **action endpoint path** (`/action` per the device discovery docs at
    https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e), access key,
    secret key, scope (`openapi` per the docs), and the exact redirect URL you
    registered for the app, then hit **Save** or directly **Start OAuth** to
    launch the authorization URL in a new tab. Use the documented cloud host
-   `https://openapi.u-tec.com` for API calls (the previous placeholder
-   `https://api.utec.com` can cause name-resolution errors) and the documented
-   OAuth host `https://oauth.u-tec.com` so the authorization link matches
-   `https://oauth.u-tec.com/authorize`. Existing configs that still reference
-   the deprecated `openapi.ultraloq.com` hostname (or the old `/login` OAuth
-   suffix) are automatically rewritten on startup; refresh the UI to confirm the
-   saved values. The settings are stored in `/data/config.json` inside the volume
-   and can be managed entirely through the UI—no environment file is required.
-   Use **List Devices** to confirm the API responds with your locks, and
-   **Clear Logs** to wipe the rotating log file.
+   `https://api.u-tec.com` for API calls (the gateway defaults to this and logs
+   the final URL it calls) and the documented OAuth host `https://oauth.u-tec.com`
+   so the authorization link matches `https://oauth.u-tec.com/authorize`.
+   Existing configs that still reference the deprecated `openapi.ultraloq.com`
+   hostname (or the old `/login` OAuth suffix) are automatically rewritten on
+   startup; refresh the UI to confirm the saved values. The settings are stored
+   in `/data/config.json` inside the volume and can be managed entirely through
+   the UI—no environment file is required. Use **List Devices** to confirm the
+   API responds with your locks, and **Clear Logs** to wipe the rotating log
+   file.
 4. After approving the OAuth prompt, copy the full redirected URL from the
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh
@@ -72,7 +72,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   the gateway is running and reachable.
 
 ### Gateway endpoints
-- `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`
+- `GET /api/devices` → returns `{ "payload": { "devices": [...] } }` by posting
+  the documented discovery payload to `<base_url><action_path>` (defaults to
+  `https://api.u-tec.com/action`)
 - `GET /api/status?id=<device_id>` → returns the raw status payload for the
   given device
 - `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }`

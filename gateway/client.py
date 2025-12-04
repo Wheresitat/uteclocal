@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 import logging
 
 import httpx
+from uuid import uuid4
 
 from .config import GatewayConfig
 
@@ -39,10 +40,24 @@ class UtecCloudClient:
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:
-        devices_path = self._config.get("devices_path") or "/openapi/v1/devices"
-        url = urljoin(self._config["base_url"].rstrip("/") + "/", devices_path.lstrip("/"))
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
         logging.getLogger(__name__).info("Requesting devices from %s", url)
-        resp = await self._client.get(url, headers=self._headers(), follow_redirects=True)
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": "Discovery",
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {},
+        }
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
         try:
             data = resp.json()

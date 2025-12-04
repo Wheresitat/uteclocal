@@ -22,9 +22,9 @@ Custom integration to expose U-tec locks via a local gateway.
 Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 
 ## Run the Dockerized gateway
-1. Build the image (from the repo root). If you previously cloned the repo, run `git pull` first to ensure you have the latest files (including `Dockerfile` and `scripts/build_gateway.sh`).
+1. Build the image (from the repo root). **If you only have the HACS download (which contains just `custom_components/` and `const.py`), you must clone the full repo first** so that `Dockerfile`, `gateway/`, and `scripts/build_gateway.sh` exist. Run `git pull` if you cloned earlier to ensure you have the latest files.
    ```bash
-   git clone https://github.com/Wheresitat/uteclocal.git
+   git clone https://github.com/Wheresitat/uteclocal.git  # skip if already cloned
    cd uteclocal
 
    # quick sanity check that the needed files exist
@@ -59,6 +59,10 @@ and push `utec-local-gateway` to your registry of choice, then run the same
   directory. Re-clone the repo if those are missing.
 - If you see build errors about missing files, run `git pull` to update to the
   latest commit, then retry `./scripts/build_gateway.sh`.
+- If you are looking inside your Home Assistant `custom_components/` folder or
+  a HACS download, you will not see `Dockerfile` or `gateway/`. Those files are
+  only in the full repository—clone it to another folder (outside your HA
+  config) and build the image there.
 
 ### Gateway endpoints
 - `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`

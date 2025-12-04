@@ -26,8 +26,8 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    ```bash
    git clone https://github.com/Wheresitat/uteclocal.git
    cd uteclocal
-   # use the repo root as the build context to avoid "path not found" errors
-   docker build -t uteclocal-gateway -f gateway/Dockerfile .
+   # build from the repo root (uses the root-level Dockerfile)
+   docker build -t uteclocal-gateway .
    ```
 2. Run the container and persist its config/logs in `/data`:
    ```bash

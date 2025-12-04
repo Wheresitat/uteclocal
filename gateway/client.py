@@ -21,12 +21,17 @@ class UtecCloudClient:
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
-        if self._config.get("access_key"):
-            headers["X-Access-Key"] = self._config["access_key"]
-        if self._config.get("secret_key"):
-            headers["X-Secret-Key"] = self._config["secret_key"]
-        if self._config.get("scope"):
-            headers["X-Scope"] = self._config["scope"]
+        token = (self._config.get("access_token") or "").strip()
+        token_type = (self._config.get("token_type") or "Bearer").strip()
+        if token:
+            headers["Authorization"] = f"{token_type} {token}"
+        else:
+            if self._config.get("access_key"):
+                headers["X-Access-Key"] = self._config["access_key"]
+            if self._config.get("secret_key"):
+                headers["X-Secret-Key"] = self._config["secret_key"]
+            if self._config.get("scope"):
+                headers["X-Scope"] = self._config["scope"]
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:

@@ -52,6 +52,11 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    `/data/config.json` inside the volume and can be managed entirely through the
    UI—no environment file is required. Use **List Devices** to confirm the API
    responds with your locks, and **Clear Logs** to wipe the rotating log file.
+4. After approving the OAuth prompt, copy the full redirected URL from the
+   browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
+   then **Exchange Code**. The gateway will store the resulting access/refresh
+   tokens and use them for subsequent API calls (falling back to access/secret
+   headers only if no bearer token is saved).
 
 **Troubleshooting connectivity**
 - Run `docker compose ps` and confirm the `gateway` service is `running`.

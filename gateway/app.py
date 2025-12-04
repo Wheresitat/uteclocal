@@ -3,14 +3,16 @@ from __future__ import annotations
 import logging
 from string import Template
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qs
+
+import httpx
 
 from fastapi import Body, FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from .client import UtecCloudClient
-from .config import GatewayConfig, load_config, save_config
+from .config import GatewayConfig, load_config, normalize_base_url, save_config
 from .logging_utils import clear_logs, read_log_lines, setup_logging
 
 app = FastAPI(title="U-tec Local Gateway", version="0.1.0")
@@ -32,6 +34,11 @@ async def _startup() -> None:
 
 def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
     logs_html = "<br>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in log_lines)
+    token_status = ""
+    if config.get("access_token"):
+        token_status = f"Stored token ({config.get('token_type', 'Bearer')}) ready; expires in {config.get('token_expires_in', 0)}s"
+    elif config.get("auth_code"):
+        token_status = "Authorization code saved; exchange it for a token below."
     template = Template(
         """
         <!doctype html>
@@ -71,6 +78,17 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     <button type="button" id="clear-logs">Clear Logs</button>
                 </div>
             </form>
+            <div class="section">
+                <strong>OAuth Callback</strong>
+                <p class="muted">After approving access, paste the final redirected URL below to extract the <code>code</code> and exchange it for tokens.</p>
+                <label>Redirected URL<br/><input type="text" id="callback-url" placeholder="https://your-app/callback?code=..." style="width: 36rem;" /></label>
+                <label>Authorization Code<br/><input type="text" id="auth-code" value="$auth_code" style="width: 18rem;" /></label>
+                <div class="actions" style="margin-top: 0.5rem;">
+                    <button type="button" id="extract-code">Extract Code</button>
+                    <button type="button" id="exchange-code">Exchange Code</button>
+                </div>
+                <div class="muted" id="token-status">$token_status</div>
+            </div>
             <div class="section">
                 <strong>Devices</strong>
                 <div id="devices" class="muted">No devices fetched yet.</div>
@@ -117,6 +135,52 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     }
                 });
 
+                function parseAuthCode(urlStr) {
+                    try {
+                        const parsed = new URL(urlStr);
+                        return parsed.searchParams.get('code');
+                    } catch (err) {
+                        return '';
+                    }
+                }
+
+                document.getElementById('extract-code').addEventListener('click', () => {
+                    const urlStr = document.getElementById('callback-url').value;
+                    const code = parseAuthCode(urlStr);
+                    if (!code) {
+                        alert('No "code" parameter found in the provided URL.');
+                        return;
+                    }
+                    document.getElementById('auth-code').value = code;
+                });
+
+                document.getElementById('exchange-code').addEventListener('click', async () => {
+                    const data = new FormData(form);
+                    const base_url = data.get('base_url');
+                    const access_key = data.get('access_key');
+                    const secret_key = data.get('secret_key');
+                    const redirect_url = data.get('redirect_url');
+                    const code = document.getElementById('auth-code').value;
+                    const status = document.getElementById('token-status');
+                    status.textContent = 'Requesting token...';
+                    const resp = await fetch('/oauth/exchange', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ base_url, access_key, secret_key, redirect_url, code })
+                    });
+                    const payload = await resp.json();
+                    if (resp.ok) {
+                        const tokenLabel = payload.token_type || 'token';
+                        const expires = payload.expires_in || '?';
+                        status.textContent = 'Received ' + tokenLabel + ' (expires in ' + expires + 's)';
+                        alert('Token saved. You can now use the UI to test the API.');
+                        window.location.reload();
+                    } else {
+                        status.textContent = payload.detail || 'Token exchange failed';
+                        alert(payload.detail || 'Token exchange failed');
+                    }
+                });
+
                 document.getElementById('fetch-devices').addEventListener('click', async () => {
                     const devicesDiv = document.getElementById('devices');
                     devicesDiv.textContent = 'Loading devices...';
@@ -138,7 +202,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                             const li = document.createElement('li');
                             const name = dev.name || dev.device_name || dev.device_id || 'Unknown device';
                             const id = dev.id || dev.device_id || dev.serial_no || '';
-                            li.textContent = id ? `$${name} ($${id})` : name;
+                            li.textContent = id ? name + ' (' + id + ')' : name;
                             list.appendChild(li);
                         });
                         devicesDiv.replaceChildren(list);
@@ -159,6 +223,8 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         redirect_url=config.get("redirect_url", ""),
         log_level=config.get("log_level", "INFO"),
         logs_html=logs_html or "No logs yet.",
+        auth_code=config.get("auth_code", ""),
+        token_status=token_status,
     )
 
 
@@ -178,14 +244,18 @@ async def update_config(
     redirect_url: str = Form(""),
     log_level: str = Form("INFO"),
 ) -> JSONResponse:
-    config: GatewayConfig = {
-        "base_url": base_url,
-        "access_key": access_key,
-        "secret_key": secret_key,
-        "scope": scope,
-        "redirect_url": redirect_url,
-        "log_level": log_level,
-    }
+    existing = load_config()
+    config: GatewayConfig = existing.copy()
+    config.update(
+        {
+            "base_url": normalize_base_url(base_url),
+            "access_key": access_key,
+            "secret_key": secret_key,
+            "scope": scope,
+            "redirect_url": redirect_url,
+            "log_level": log_level,
+        }
+    )
     save_config(config)
     setup_logging(log_level)
     logging.getLogger(__name__).info("Configuration updated")
@@ -268,7 +338,7 @@ async def api_unlock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 @app.post("/oauth/start")
 async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
-    base_url = (payload.get("base_url") or "").strip()
+    base_url = normalize_base_url(payload.get("base_url") or "")
     access_key = (payload.get("access_key") or "").strip()
     redirect_url = (payload.get("redirect_url") or "").strip()
     scope = (payload.get("scope") or "").strip() or "user"
@@ -288,3 +358,68 @@ async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     authorize_url = f"{base_url.rstrip('/')}/oauth/authorize?{params}"
     logging.getLogger(__name__).info("Generated OAuth authorize URL for redirect %s", redirect_url)
     return JSONResponse({"authorize_url": authorize_url})
+
+
+def _extract_code(code: str | None, callback_url: str | None) -> str:
+    if code and code.strip():
+        return code.strip()
+    if not callback_url:
+        return ""
+    parsed = urlparse(callback_url)
+    params = parse_qs(parsed.query)
+    return params.get("code", [""])[0]
+
+
+@app.post("/oauth/exchange")
+async def oauth_exchange(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+    base_url = normalize_base_url(payload.get("base_url") or "")
+    access_key = (payload.get("access_key") or "").strip()
+    secret_key = (payload.get("secret_key") or "").strip()
+    redirect_url = (payload.get("redirect_url") or "").strip()
+    code = _extract_code(payload.get("code"), payload.get("callback_url"))
+
+    if not all([base_url, access_key, secret_key, redirect_url, code]):
+        raise HTTPException(status_code=400, detail="base_url, access_key, secret_key, redirect_url, and code are required")
+
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_url,
+        "client_id": access_key,
+        "client_secret": secret_key,
+    }
+    token_url = f"{base_url.rstrip('/')}/oauth/token"
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(token_url, data=data)
+
+    if resp.status_code >= 400:
+        detail = resp.text or resp.reason_phrase
+        logging.getLogger(__name__).warning("OAuth exchange failed: %s", detail)
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+
+    tokens = resp.json()
+    config = load_config()
+    config.update(
+        {
+            "base_url": base_url,
+            "access_key": access_key,
+            "secret_key": secret_key,
+            "redirect_url": redirect_url,
+            "auth_code": code,
+            "access_token": tokens.get("access_token", ""),
+            "refresh_token": tokens.get("refresh_token", ""),
+            "token_type": tokens.get("token_type", "Bearer"),
+            "token_expires_in": int(tokens.get("expires_in", 0)),
+        }
+    )
+    save_config(config)
+    logging.getLogger(__name__).info("OAuth code exchanged; access token stored")
+
+    return JSONResponse(
+        {
+            "access_token": tokens.get("access_token"),
+            "refresh_token": tokens.get("refresh_token"),
+            "token_type": tokens.get("token_type", "Bearer"),
+            "expires_in": tokens.get("expires_in", 0),
+        }
+    )

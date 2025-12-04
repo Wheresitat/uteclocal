@@ -9,6 +9,11 @@ class GatewayConfig(TypedDict, total=False):
     base_url: str
     access_key: str
     secret_key: str
+    auth_code: str
+    access_token: str
+    refresh_token: str
+    token_type: str
+    token_expires_in: int
     log_level: str
     scope: str
     redirect_url: str
@@ -23,6 +28,11 @@ DEFAULT_CONFIG: GatewayConfig = {
     "base_url": "https://openapi.ultraloq.com",
     "access_key": "",
     "secret_key": "",
+    "auth_code": "",
+    "access_token": "",
+    "refresh_token": "",
+    "token_type": "Bearer",
+    "token_expires_in": 0,
     "log_level": "INFO",
     "scope": "",
     "redirect_url": "",
@@ -31,6 +41,15 @@ DEFAULT_CONFIG: GatewayConfig = {
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def normalize_base_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return DEFAULT_CONFIG["base_url"]
+    if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+        cleaned = "https://" + cleaned
+    return cleaned
 
 
 def load_config() -> GatewayConfig:
@@ -47,13 +66,10 @@ def load_config() -> GatewayConfig:
 
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
     # errors from the legacy "openapi.u-tec.com" host are avoided.
-    normalized_base = (config.get("base_url") or "").strip()
+    normalized_base = normalize_base_url(config.get("base_url", ""))
     needs_save = False
-    if not normalized_base:
-        config["base_url"] = DEFAULT_CONFIG["base_url"]
-        needs_save = True
-    elif "openapi.u-tec.com" in normalized_base:
-        config["base_url"] = DEFAULT_CONFIG["base_url"]
+    if not config.get("base_url") or config.get("base_url") != normalized_base:
+        config["base_url"] = normalized_base
         needs_save = True
 
     if needs_save:
@@ -70,6 +86,7 @@ def save_config(config: GatewayConfig) -> None:
 __all__ = [
     "GatewayConfig",
     "DEFAULT_CONFIG",
+    "normalize_base_url",
     "load_config",
     "save_config",
     "CONFIG_PATH",

@@ -138,7 +138,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                             const li = document.createElement('li');
                             const name = dev.name || dev.device_name || dev.device_id || 'Unknown device';
                             const id = dev.id || dev.device_id || dev.serial_no || '';
-                            li.textContent = id ? `${name} (${id})` : name;
+                            li.textContent = id ? `$${name} ($${id})` : name;
                             list.appendChild(li);
                         });
                         devicesDiv.replaceChildren(list);
@@ -175,6 +175,7 @@ async def update_config(
     access_key: str = Form(""),
     secret_key: str = Form(""),
     scope: str = Form(""),
+    redirect_url: str = Form(""),
     log_level: str = Form("INFO"),
 ) -> JSONResponse:
     config: GatewayConfig = {

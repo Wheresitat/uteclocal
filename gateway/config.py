@@ -47,7 +47,9 @@ def load_config() -> GatewayConfig:
         config.update(loaded)
 
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
-    # errors from the legacy "openapi.u-tec.com" host are avoided.
+    # errors from the legacy "openapi.u-tec.com" host are avoided. Also ensure
+    # the URL includes a scheme (default to https) so users can paste hosts
+    # without breaking outbound requests.
     normalized_base = (config.get("base_url") or "").strip()
     needs_save = False
     if not normalized_base:
@@ -55,6 +57,11 @@ def load_config() -> GatewayConfig:
         needs_save = True
     elif "openapi.u-tec.com" in normalized_base:
         config["base_url"] = DEFAULT_CONFIG["base_url"]
+        needs_save = True
+
+    sanitized_base = config["base_url"].strip()
+    if sanitized_base and not sanitized_base.startswith(("http://", "https://")):
+        config["base_url"] = f"https://{sanitized_base}"
         needs_save = True
 
     if needs_save:

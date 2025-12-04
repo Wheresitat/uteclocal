@@ -42,18 +42,19 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    with `docker compose -p uteclocal down` before starting it again.
 3. Open the UI and enter your U-tec API base URL, access key, secret key,
    scope (if your account uses one, e.g., `enterprise`), and redirect URI
-   (e.g., `http://<gateway-host>/oauth/callback`) then hit **Save**. Use
-   the documented cloud host
-   `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
-   can cause name-resolution errors). Existing configs that still reference the
-   legacy `openapi.u-tec.com` host are automatically rewritten to
-   `https://openapi.ultraloq.com` on startup; refresh the UI to confirm the saved
-   value. The settings are stored in
-   `/data/config.json` inside the volume. Use **Clear Logs** to wipe the rotating
-   log file. The UI shows the callback URL to register in the U-tec console and
-   captures any `?code=...` responses sent back to `/oauth/callback` so you can
-   copy the returned code. Use the **Fetch devices** button in the UI to exercise
-   `/api/devices` with the stored credentials.
+   (e.g., `http://<gateway-host>/oauth/callback`) then hit **Save**. Use the
+   documented cloud host `https://openapi.ultraloq.com` (the previous placeholder
+   `https://api.utec.com` can cause name-resolution errors). Existing configs
+   that still reference the legacy `openapi.u-tec.com` host are automatically
+   rewritten to `https://openapi.ultraloq.com` on startup; refresh the UI to
+   confirm the saved value. If you paste a bare host without `https://`, the
+   gateway will prefix it with `https://` for you to avoid malformed outbound
+   requests. The settings are stored in `/data/config.json` inside the volume.
+   Use **Clear Logs** to wipe the rotating log file. The UI shows the callback
+   URL to register in the U-tec console and captures any `?code=...` responses
+   sent back to `/oauth/callback` so you can copy the returned code. Use the
+   **Fetch devices** button in the UI to exercise `/api/devices` with the stored
+   credentials.
 
 **Troubleshooting connectivity**
 - Run `docker compose ps` and confirm the `gateway` service is `running`.

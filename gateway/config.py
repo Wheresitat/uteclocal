@@ -10,6 +10,7 @@ class GatewayConfig(TypedDict, total=False):
     access_key: str
     secret_key: str
     log_level: str
+    scope: str
 
 
 DATA_DIR = Path("/data")
@@ -21,6 +22,7 @@ DEFAULT_CONFIG: GatewayConfig = {
     "access_key": "",
     "secret_key": "",
     "log_level": "INFO",
+    "scope": "",
 }
 
 

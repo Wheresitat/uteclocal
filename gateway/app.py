@@ -53,6 +53,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <label>API Base URL<br/><input type="text" name="base_url" value="$base_url" required /></label>
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
+                <label>Scope<br/><input type="text" name="scope" value="$scope" /></label>
                 <label>Log Level<br/><input type="text" name="log_level" value="$log_level" /></label>
                 <div class="actions">
                     <button type="submit">Save</button>
@@ -86,6 +87,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         base_url=config.get("base_url", ""),
         access_key=config.get("access_key", ""),
         secret_key=config.get("secret_key", ""),
+        scope=config.get("scope", ""),
         log_level=config.get("log_level", "INFO"),
         logs_html=logs_html or "No logs yet.",
     )
@@ -103,12 +105,14 @@ async def update_config(
     base_url: str = Form(...),
     access_key: str = Form(""),
     secret_key: str = Form(""),
+    scope: str = Form(""),
     log_level: str = Form("INFO"),
 ) -> JSONResponse:
     config: GatewayConfig = {
         "base_url": base_url,
         "access_key": access_key,
         "secret_key": secret_key,
+        "scope": scope,
         "log_level": log_level,
     }
     save_config(config)

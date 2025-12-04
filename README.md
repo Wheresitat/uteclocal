@@ -6,7 +6,7 @@ Custom integration to expose U-tec locks via a local gateway.
 - A **Dockerized FastAPI gateway** that proxies the U-tec open API and exposes
   Home Assistant–friendly endpoints (`/api/devices`, `/api/status`, `/lock`,
   `/unlock`). The gateway includes a lightweight UI for entering your API
-  base URL, access key, and secret key, plus buttons to clear/view logs.
+  base URL, access key, secret key, and scope, plus buttons to clear/view logs.
 - A **HACS-compatible custom integration** that talks to the gateway and
   surfaces your locks as entities (lock/unlock, battery level, health).
 
@@ -50,8 +50,8 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
      uteclocal-gateway
    ```
 3. Open the UI at `http://<host>:8000/`, enter your U-tec API base URL,
-   access key, and secret key, and hit **Save**. The settings are stored in
-   `/data/config.json` inside the volume. Use **Clear Logs** to wipe the
+   access key, secret key, and scope, and hit **Save**. The settings are stored
+   in `/data/config.json` inside the volume. Use **Clear Logs** to wipe the
    rotating log file.
 
 If you prefer to pull an already-built image instead of building locally, tag

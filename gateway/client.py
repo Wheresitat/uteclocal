@@ -25,6 +25,8 @@ class UtecCloudClient:
             headers["X-Access-Key"] = self._config["access_key"]
         if self._config.get("secret_key"):
             headers["X-Secret-Key"] = self._config["secret_key"]
+        if self._config.get("scope"):
+            headers["X-Scope"] = self._config["scope"]
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:

@@ -312,6 +312,13 @@ async def api_devices() -> dict[str, Any]:
             status_code=exc.response.status_code,
             content={"detail": body or exc.response.reason_phrase},
         )
+    except httpx.RequestError as exc:
+        host = getattr(exc.request.url, "host", None) if exc.request else None
+        log.warning("Device fetch could not reach cloud host %s: %s", host, exc)
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"Unable to reach cloud host {host or 'unknown'}: {exc}"},
+        )
     except ValueError as exc:
         log.warning("Device fetch returned non-JSON response")
         return JSONResponse(status_code=502, content={"detail": "Cloud response was not JSON"})

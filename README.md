@@ -28,6 +28,8 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    cd uteclocal
    # build from the repo root (uses the root-level Dockerfile)
    docker build -t uteclocal-gateway .
+   # or run the helper, which checks that Dockerfile and gateway/ are present
+   ./scripts/build_gateway.sh
    ```
 2. Run the container and persist its config/logs in `/data`:
    ```bash
@@ -45,6 +47,13 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 If you prefer to pull an already-built image instead of building locally, tag
 and push `utec-local-gateway` to your registry of choice, then run the same
 `docker run` command above with that image reference.
+
+**Troubleshooting build errors**
+- If Docker cannot find `Dockerfile`, verify you are in the repo root by
+  running `ls` and confirming you see `Dockerfile` and the `gateway/`
+  directory. Re-clone the repo if those are missing.
+- If you see build errors about missing files, run `git pull` to update to the
+  latest commit, then retry `./scripts/build_gateway.sh`.
 
 ### Gateway endpoints
 - `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`

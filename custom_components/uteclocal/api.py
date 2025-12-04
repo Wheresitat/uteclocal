@@ -14,14 +14,26 @@ class UtecLocalAPI:
     async def _post(self, url: str, payload: dict[str, Any]) -> None:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
-                resp.raise_for_status()
+                await self._raise_for_status(resp)
+
+    async def _raise_for_status(self, resp: aiohttp.ClientResponse) -> None:
+        try:
+            resp.raise_for_status()
+        except aiohttp.ClientResponseError as exc:
+            detail = await resp.text()
+            raise aiohttp.ClientResponseError(
+                exc.request_info,
+                exc.history,
+                status=exc.status,
+                message=f"{exc.message}: {detail}",
+            ) from exc
 
     async def async_get_devices(self) -> list[dict[str, Any]]:
         """Return a list of devices from the gateway."""
         url = f"{self._host}/api/devices"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
-                resp.raise_for_status()
+                await self._raise_for_status(resp)
                 data = await resp.json(content_type=None)
         payload = data.get("payload") or {}
         devices = payload.get("devices") or []
@@ -33,7 +45,7 @@ class UtecLocalAPI:
         url = f"{self._host}/api/status"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
-                resp.raise_for_status()
+                await self._raise_for_status(resp)
                 return await resp.json(content_type=None)
 
     async def async_lock(self, device_id: str) -> None:

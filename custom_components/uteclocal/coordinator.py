@@ -21,9 +21,11 @@ class UtecDataUpdateCoordinator(DataUpdateCoordinator[list[dict[str, Any]]]):
             update_interval=timedelta(seconds=max(scan_interval, 10)),
         )
         self.api = api
+        self.bridge_status: dict[str, Any] = {}
 
     async def _async_update_data(self) -> list[dict[str, Any]]:
         try:
+            self.bridge_status = await self.api.async_get_bridge_status()
             return await self.api.async_get_devices()
         except Exception as exc:
             raise UpdateFailed(f"Failed to fetch devices: {exc}") from exc

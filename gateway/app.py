@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import logging
+import base64
+import hashlib
+import os
+import secrets
+from datetime import datetime, timedelta
 from string import Template
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
+import ipaddress
 
 from fastapi import Body, FastAPI, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,8 +24,14 @@ from .state import STATE
 app = FastAPI(title="U-tec Local Gateway", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://0.0.0.0",
+        "http://localhost:8124",
+        "http://127.0.0.1:8124",
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -33,7 +45,35 @@ async def _startup() -> None:
     POLLING_MANAGER.start()
 
 
-def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    await POLLING_MANAGER.stop()
+
+
+def _validate_base_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"https", "http"}:
+        raise HTTPException(status_code=400, detail="Base URL must be http or https")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Base URL hostname is required")
+
+    allow_insecure = os.getenv("ALLOW_INSECURE_UTEC", "").lower() in {"1", "true", "yes"}
+    if parsed.scheme != "https" and not allow_insecure:
+        raise HTTPException(status_code=400, detail="HTTPS is required unless ALLOW_INSECURE_UTEC=1")
+
+    try:
+        ip_obj = ipaddress.ip_address(parsed.hostname)
+        is_private = ip_obj.is_private or ip_obj.is_loopback
+    except ValueError:
+        # hostname
+        is_private = parsed.hostname.endswith(".local") or parsed.hostname in {"localhost"}
+    if is_private and not allow_insecure:
+        raise HTTPException(status_code=400, detail="Private/loopback base URLs require ALLOW_INSECURE_UTEC=1")
+
+    return raw_url.rstrip("/")
+
+
+def _render_index(config: GatewayConfig, log_lines: list[str]) -> str:
     logs_html = "<br>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in log_lines)
     template = Template(
         """
@@ -250,22 +290,33 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
 async def index() -> HTMLResponse:
     config = load_config()
     logs = read_log_lines()
-    return HTMLResponse(render_index(config, logs))
+    return HTMLResponse(_render_index(config, logs))
 
 
 @app.get("/auth/start")
 async def auth_start(request: Request) -> JSONResponse:
     config = load_config()
-    base_url = (config.get("base_url") or "").strip()
-    if not base_url:
-        raise HTTPException(status_code=400, detail="Base URL not configured")
+    base_url = _validate_base_url((config.get("base_url") or "").strip())
     redirect_uri = str(request.url_for("auth_callback"))
-    authorize_url = f"{base_url.rstrip('/')}/oauth/authorize"
+    state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+    STATE.set_oauth_challenge(
+        {
+            "state": state,
+            "code_verifier": code_verifier,
+            "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        }
+    )
+    authorize_url = f"{base_url}/oauth/authorize"
     params = urlencode(
         {
             "client_id": config.get("client_id", ""),
             "response_type": "code",
             "redirect_uri": redirect_uri,
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
         }
     )
     url = f"{authorize_url}?{params}"
@@ -274,21 +325,25 @@ async def auth_start(request: Request) -> JSONResponse:
 
 
 @app.get("/auth/callback")
-async def auth_callback(request: Request, code: str) -> JSONResponse:
+async def auth_callback(request: Request, code: str, state: str | None = None) -> JSONResponse:
     config = load_config()
     redirect_uri = str(request.url_for("auth_callback"))
+    challenge = STATE.get_oauth_challenge()
+    if not challenge or challenge["expires_at"] <= datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OAuth state has expired; restart flow")
+    if state and state != challenge["state"]:
+        raise HTTPException(status_code=400, detail="OAuth state mismatch")
     try:
         async with UtecCloudClient(config) as client:
-            token = await client.exchange_code(code, redirect_uri)
+            token = await client.exchange_code(code, redirect_uri, code_verifier=challenge["code_verifier"])
     except Exception as exc:
         logging.getLogger(__name__).exception("OAuth callback failed: %s", exc)
         raise HTTPException(status_code=400, detail="Failed to exchange authorization code") from exc
+    STATE.set_oauth_challenge(None)
     if token:
         config.update(token)  # type: ignore[arg-type]
         if "expires_in" in token:
             try:
-                from datetime import datetime, timedelta
-
                 config["token_expires_at"] = (datetime.utcnow() + timedelta(seconds=int(token["expires_in"]))).isoformat()
             except Exception:
                 pass
@@ -321,6 +376,7 @@ async def update_config(
     config: GatewayConfig = load_config()
     if not (base_url or "").strip():
         raise HTTPException(status_code=400, detail="Base URL is required")
+    base_url = _validate_base_url(base_url.strip())
     config.update(
         {
             "base_url": base_url,
@@ -364,9 +420,21 @@ async def api_logs_clear() -> JSONResponse:
     return JSONResponse({"status": "cleared"})
 
 
+def _health_payload() -> dict[str, Any]:
+    status = STATE.status()
+    healthy = status.get("token_valid", False) and not status.get("error") and status.get("poller_running", False)
+    return {"status": "ok" if healthy else "error", "bridge": status}
+
+
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    payload = _health_payload()
+    return JSONResponse(payload, status_code=200 if payload["status"] == "ok" else 503)
+
+
+@app.get("/health/ready")
+async def readiness() -> JSONResponse:
+    return await health()
 
 
 async def _with_client() -> UtecCloudClient:

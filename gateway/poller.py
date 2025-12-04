@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
+import random
 from typing import Callable
 
 from .client import UtecCloudClient
@@ -25,28 +26,33 @@ class Poller:
             self._stop_event.clear()
             self._task = asyncio.create_task(self._run())
             logger.info("Started background poller")
+            STATE.set_poller_running(True)
 
     async def stop(self) -> None:
         if self._task:
             self._stop_event.set()
             await self._task
             logger.info("Stopped background poller")
+            STATE.set_poller_running(False)
 
     async def _run(self) -> None:
-        while not self._stop_event.is_set():
-            config = self._config_loader()
-            interval = max(int(config.get("polling_interval", 60)), 15)
+        try:
+            while not self._stop_event.is_set():
+                config = self._config_loader()
+                interval = max(int(config.get("polling_interval", 60)), 15)
 
-            try:
-                await self._poll_once(config)
-            except Exception as exc:  # pragma: no cover - background safety
-                logger.exception("Polling failed: %s", exc)
-                STATE.set_error(str(exc))
+                try:
+                    await self._poll_once(config)
+                except Exception as exc:  # pragma: no cover - background safety
+                    logger.exception("Polling failed: %s", exc)
+                    STATE.set_error(str(exc))
 
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                continue
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            STATE.set_poller_running(False)
 
     async def _poll_once(self, config: GatewayConfig) -> None:
         if not (config.get("base_url") or "").strip():
@@ -59,15 +65,19 @@ class Poller:
 
         async with UtecCloudClient(config) as client:
             await self._ensure_token_valid(client, config)
-            devices = await client.fetch_devices()
+            devices = await self._fetch_with_retry(lambda: client.fetch_devices())
             STATE.set_devices(devices)
 
             for device in devices:
                 device_id = str(device.get("id"))
                 if not device_id:
                     continue
-                details = await client.fetch_status(device_id)
-                STATE.update_device(device_id, details)
+                try:
+                    details = await self._fetch_with_retry(lambda: client.fetch_status(device_id))
+                    STATE.update_device(device_id, details, available=True, error=None)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("Failed to refresh device %s: %s", device_id, exc)
+                    STATE.update_device(device_id, device, available=False, error=str(exc))
 
     async def _ensure_token_valid(self, client: UtecCloudClient, config: GatewayConfig) -> None:
         expiry_raw = config.get("token_expires_at")
@@ -99,6 +109,28 @@ class Poller:
                 STATE.set_token_expiry(new_expiry)
             except Exception:
                 STATE.set_token_expiry(None)
+
+    async def _fetch_with_retry(self, func: Callable[[], "asyncio.Future[Any]"] | Callable[[], Any], retries: int = 3) -> Any:
+        delay = 1.0
+        last_exc: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                result = func()
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+            except Exception as exc:  # pragma: no cover - defensive
+                last_exc = exc
+                if attempt == retries:
+                    break
+                jitter = random.uniform(0, 0.5)
+                logger.warning(
+                    "Retrying after error (attempt %s/%s): %s", attempt, retries, exc
+                )
+                await asyncio.sleep(delay + jitter)
+                delay = min(delay * 2, 30)
+        if last_exc:
+            raise last_exc
 
 
 POLLING_MANAGER = Poller(lambda: client_config_loader())

@@ -69,7 +69,7 @@ class UtecCloudClient:
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
-    async def exchange_code(self, code: str, redirect_uri: str) -> dict[str, Any]:
+    async def exchange_code(self, code: str, redirect_uri: str, *, code_verifier: str | None = None) -> dict[str, Any]:
         url = f"{self._base_url()}/oauth/token"
         payload = {
             "grant_type": "authorization_code",
@@ -78,6 +78,8 @@ class UtecCloudClient:
             "client_secret": self._config.get("client_secret"),
             "redirect_uri": redirect_uri,
         }
+        if code_verifier:
+            payload["code_verifier"] = code_verifier
         resp = await self._client.post(url, data=payload, headers=self._headers())
         resp.raise_for_status()
         return resp.json()

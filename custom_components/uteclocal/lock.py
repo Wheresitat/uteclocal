@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.lock import LockEntity
@@ -8,9 +9,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .api import UtecLocalAPI
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -23,13 +28,23 @@ async def async_setup_entry(
     coordinator = data["coordinator"]
     api = UtecLocalAPI(data["host"])
 
-    entities: list[UtecLocalLock] = []
-    for dev in coordinator.data:
-        dev_id = str(dev.get("id"))
-        name = dev.get("name") or f"U-tec Lock {dev_id}"
-        entities.append(UtecLocalLock(dev_id, name, api, entry.entry_id, coordinator))
+    entities: dict[str, UtecLocalLock] = {}
 
-    async_add_entities(entities)
+    def _sync_entities() -> None:
+        new_entities: list[UtecLocalLock] = []
+        for dev in coordinator.data:
+            dev_id = str(dev.get("id"))
+            if not dev_id or dev_id in entities:
+                continue
+            name = dev.get("name") or f"U-tec Lock {dev_id}"
+            entity = UtecLocalLock(dev_id, name, api, entry.entry_id, coordinator)
+            entities[dev_id] = entity
+            new_entities.append(entity)
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _sync_entities()
+    coordinator.async_add_listener(_sync_entities)
 
 
 class UtecLocalLock(CoordinatorEntity, LockEntity):
@@ -56,7 +71,13 @@ class UtecLocalLock(CoordinatorEntity, LockEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        device = self._device_entry
+        if device is None:
+            return self.coordinator.last_update_success
+        available = device.get("available")
+        if available is None:
+            return self.coordinator.last_update_success
+        return bool(available)
 
     @property
     def is_locked(self) -> bool | None:
@@ -81,18 +102,33 @@ class UtecLocalLock(CoordinatorEntity, LockEntity):
         )
 
     async def async_lock(self, **kwargs: Any) -> None:
-        await self._api.async_lock(self._device_id)
+        try:
+            await self._api.async_lock(self._device_id)
+        except Exception as exc:  # pragma: no cover - HA logging
+            _LOGGER.error("Failed to lock %s: %s", self._device_id, exc)
+            raise HomeAssistantError(f"Failed to lock {self._device_id}: {exc}") from exc
         await self.coordinator.async_request_refresh()
 
     async def async_unlock(self, **kwargs: Any) -> None:
-        await self._api.async_unlock(self._device_id)
+        try:
+            await self._api.async_unlock(self._device_id)
+        except Exception as exc:  # pragma: no cover - HA logging
+            _LOGGER.error("Failed to unlock %s: %s", self._device_id, exc)
+            raise HomeAssistantError(f"Failed to unlock {self._device_id}: {exc}") from exc
         await self.coordinator.async_request_refresh()
 
     @property
     def _device_payload(self) -> dict[str, Any] | None:
+        entry = self._device_entry
+        if entry:
+            return entry.get("data") or entry
+        return None
+
+    @property
+    def _device_entry(self) -> dict[str, Any] | None:
         for dev in self.coordinator.data:
             if str(dev.get("id")) == self._device_id:
-                return dev.get("data") or dev
+                return dev
         return None
 
     @property

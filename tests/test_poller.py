@@ -2,6 +2,8 @@ import datetime as dt
 import unittest
 from unittest.mock import patch
 
+import datetime as dt
+
 from gateway import poller as poller_module
 from gateway.state import BridgeState
 

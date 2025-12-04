@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -10,6 +11,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _extract_battery(device: dict[str, Any]) -> int | None:
@@ -38,13 +42,23 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
 
-    entities: list[UtecBatterySensor] = []
-    for dev in coordinator.data:
-        dev_id = str(dev.get("id"))
-        name = dev.get("name") or f"U-tec Battery {dev_id}"
-        entities.append(UtecBatterySensor(dev_id, name, entry.entry_id, coordinator))
+    entities: dict[str, UtecBatterySensor] = {}
 
-    async_add_entities(entities)
+    def _sync_entities() -> None:
+        new_entities: list[UtecBatterySensor] = []
+        for dev in coordinator.data:
+            dev_id = str(dev.get("id"))
+            if not dev_id or dev_id in entities:
+                continue
+            name = dev.get("name") or f"U-tec Battery {dev_id}"
+            entity = UtecBatterySensor(dev_id, name, entry.entry_id, coordinator)
+            entities[dev_id] = entity
+            new_entities.append(entity)
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _sync_entities()
+    coordinator.async_add_listener(_sync_entities)
 
 
 class UtecBatterySensor(CoordinatorEntity, SensorEntity):
@@ -60,7 +74,15 @@ class UtecBatterySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        return self.coordinator.last_update_success
+        device = None
+        for dev in self.coordinator.data:
+            if str(dev.get("id")) == self._device_id:
+                device = dev
+                break
+        available = device.get("available") if device else None
+        if available is None:
+            return self.coordinator.last_update_success
+        return bool(available)
 
     @property
     def device_info(self) -> DeviceInfo:

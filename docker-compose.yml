@@ -10,6 +10,11 @@ services:
       - UTECLocal_LOG_LEVEL=INFO
     volumes:
       - uteclocal-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request,sys;resp=urllib.request.urlopen('http://localhost:8124/health',timeout=5); sys.exit(0 if json.loads(resp.read().decode()).get('status')=='ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 volumes:
   uteclocal-data:

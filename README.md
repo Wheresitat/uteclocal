@@ -40,10 +40,15 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
      uteclocal-gateway
    ```
 3. Open the UI at `http://<host>:8124/`, enter your U-tec API base URL,
-   OAuth client ID/secret, optional access/secret keys, and hit **Save**.
-   Click **Start OAuth Flow** to complete authorization, then the background
-   poller will keep devices in sync. Settings live in `/data/config.json` and
-   logs rotate in `/data/gateway.log`.
+   OAuth client ID/secret, optional access/secret keys, and hit **Save**. The
+   gateway validates your base URL (HTTPS by default) and stores only masked
+   secrets in responses. Click **Start OAuth Flow** to complete authorization
+   using PKCE + state validation; the background poller will keep devices in
+   sync. Settings live in `/data/config.json` and logs rotate in
+   `/data/gateway.log`.
+
+If you are testing against a non-HTTPS or loopback API, set the environment
+variable `ALLOW_INSECURE_UTEC=1` on the container to allow that base URL.
 
 If you prefer to pull an already-built image instead of building locally, tag
 and push `utec-local-gateway` to your registry of choice, then run the same
@@ -58,6 +63,8 @@ and push `utec-local-gateway` to your registry of choice, then run the same
   `{ "id": "<device_id>" }` in the body)
 - `GET /api/logs` / `DELETE /api/logs` → structured log access
 - OAuth helpers: `GET /auth/start`, `GET /auth/callback`, `GET /auth/status`
+- Health: `GET /health` / `GET /health/ready` → returns 200 only when the
+  poller is running with a valid token and no bridge error
 
 Point the Home Assistant integration at `http://<host>:8124` so it can fetch
 devices and control them.
@@ -72,9 +79,10 @@ Follow these steps if you installed the custom integration via HACS:
 3. When prompted for the gateway host, enter `http://<host>:8124` (or whatever
    host/port you mapped in the `docker run` command).
 4. The integration calls `/api/devices` on the gateway, exposes
-   `lock.<device>` entities, plus sensors for battery and online status. You
-   can control lock/unlock directly from Home Assistant and adjust the scan
-   interval in the integration options.
+   `lock.<device>` entities, plus sensors for battery and online status. New
+   devices appear automatically on refresh, with availability reflecting the
+   bridge’s per-device health. You can control lock/unlock directly from Home
+   Assistant and adjust the scan interval in the integration options.
 
 ## Development & testing
 

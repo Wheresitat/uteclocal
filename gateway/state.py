@@ -10,6 +10,8 @@ class DeviceState(TypedDict, total=False):
     type: str
     data: dict[str, Any]
     last_updated: str
+    available: bool
+    error: str | None
 
 
 class BridgeStatus(TypedDict, total=False):
@@ -18,6 +20,13 @@ class BridgeStatus(TypedDict, total=False):
     error: str | None
     token_valid: bool
     token_expiry: str | None
+    poller_running: bool
+
+
+class OAuthChallenge(TypedDict):
+    state: str
+    code_verifier: str
+    expires_at: dt.datetime
 
 
 class BridgeState:
@@ -28,6 +37,8 @@ class BridgeState:
         self._last_poll: dt.datetime | None = None
         self._error: str | None = None
         self._token_expiry: dt.datetime | None = None
+        self._oauth_challenge: OAuthChallenge | None = None
+        self._poller_running: bool = False
 
     def set_devices(self, devices: list[dict[str, Any]]) -> None:
         now_iso = dt.datetime.utcnow().isoformat()
@@ -39,18 +50,25 @@ class BridgeState:
                 "type": dev.get("type") or "lock",
                 "data": dev,
                 "last_updated": now_iso,
+                "available": True,
+                "error": None,
             }
         self._last_poll = dt.datetime.utcnow()
         self._error = None
 
-    def update_device(self, device_id: str, data: dict[str, Any]) -> None:
+    def update_device(self, device_id: str, data: dict[str, Any], *, available: bool = True, error: str | None = None) -> None:
         now_iso = dt.datetime.utcnow().isoformat()
         existing = self._devices.get(device_id) or {
             "id": device_id,
             "name": data.get("name") or f"U-tec Device {device_id}",
             "type": data.get("type") or "lock",
         }
-        existing.update({"data": data, "last_updated": now_iso})
+        existing.update({
+            "data": data,
+            "last_updated": now_iso,
+            "available": available,
+            "error": error,
+        })
         self._devices[device_id] = existing  # type: ignore[assignment]
         self._last_poll = dt.datetime.utcnow()
         self._error = None
@@ -58,8 +76,17 @@ class BridgeState:
     def set_error(self, message: str) -> None:
         self._error = message
 
+    def set_poller_running(self, running: bool) -> None:
+        self._poller_running = running
+
     def set_token_expiry(self, expiry: dt.datetime | None) -> None:
         self._token_expiry = expiry
+
+    def set_oauth_challenge(self, challenge: OAuthChallenge | None) -> None:
+        self._oauth_challenge = challenge
+
+    def get_oauth_challenge(self) -> OAuthChallenge | None:
+        return self._oauth_challenge
 
     # Accessors
     def devices(self) -> list[DeviceState]:
@@ -75,6 +102,7 @@ class BridgeState:
             "error": self._error,
             "token_valid": self._token_expiry is not None and self._token_expiry > dt.datetime.utcnow(),
             "token_expiry": self._token_expiry.isoformat() if self._token_expiry else None,
+            "poller_running": self._poller_running,
         }
 
 

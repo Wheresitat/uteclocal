@@ -151,7 +151,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         </html>
         """
     )
-    return template.substitute(
+    return template.safe_substitute(
         base_url=config.get("base_url", ""),
         access_key=config.get("access_key", ""),
         secret_key=config.get("secret_key", ""),

@@ -70,9 +70,27 @@ class UtecCloudClient:
             return data
         return []
 
-    async def fetch_status(self, device_id: str) -> dict[str, Any]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/status"
-        resp = await self._client.get(url, headers=self._headers(), follow_redirects=True)
+    async def fetch_status(self, device_ids: list[str]) -> dict[str, Any]:
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
+        logging.getLogger(__name__).info("Requesting device status from %s", url)
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": "Query",
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {
+                "devices": [{"id": device_id} for device_id in device_ids],
+            },
+        }
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
         try:
             data = resp.json()

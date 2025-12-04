@@ -55,8 +55,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    startup; refresh the UI to confirm the saved values. The settings are stored
    in `/data/config.json` inside the volume and can be managed entirely through
    the UI—no environment file is required. Use **List Devices** to confirm the
-   API responds with your locks, and **Clear Logs** to wipe the rotating log
-   file.
+   API responds with your locks, **Query Status** with a device id to fetch the
+   documented status payload for that lock, and **Clear Logs** to wipe the
+   rotating log file.
 4. After approving the OAuth prompt, copy the full redirected URL from the
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh
@@ -75,8 +76,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 - `GET /api/devices` → returns `{ "payload": { "devices": [...] } }` by posting
   the documented discovery payload to `<base_url><action_path>` (defaults to
   `https://api.u-tec.com/action`)
-- `GET /api/status?id=<device_id>` → returns the raw status payload for the
-  given device
+- `POST /api/status` → body `{ "devices": [{ "id": "<device_id>" }] }` posts
+  the documented `Uhome.Device/Query` payload to the same action endpoint and
+  returns the raw cloud status response
 - `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }`
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 

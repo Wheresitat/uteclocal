@@ -63,6 +63,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 .section { margin-top: 1.5rem; padding: 1rem; border: 1px solid #ddd; background: #fcfcfc; }
                 .muted { color: #555; font-size: 0.9rem; }
                 ul.devices { padding-left: 1.25rem; }
+                pre { background: #f4f4f4; padding: 0.75rem; border: 1px solid #ddd; overflow-x: auto; }
             </style>
         </head>
         <body>
@@ -85,7 +86,6 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <div class="actions">
                     <button type="submit">Save</button>
                     <button type="button" id="start-oauth">Start OAuth</button>
-                    <button type="button" id="fetch-devices">List Devices</button>
                     <button type="button" id="clear-logs">Clear Logs</button>
                 </div>
             </form>
@@ -102,7 +102,13 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
             </div>
             <div class="section">
                 <strong>Devices</strong>
+                <div class="actions" style="margin-bottom: 0.5rem;">
+                    <button type="button" id="fetch-devices">List Devices</button>
+                    <input type="text" id="status-device-id" placeholder="Device ID (e.g. 7C:DF:A1:68:3E:6A)" style="width: 22rem;" />
+                    <button type="button" id="fetch-status">Query Status</button>
+                </div>
                 <div id="devices" class="muted">No devices fetched yet.</div>
+                <div id="status" class="muted" style="margin-top: 0.75rem;">No status fetched yet.</div>
             </div>
             <div class="logs">
                 <strong>Recent Logs</strong><br/>
@@ -197,7 +203,9 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
 
                 document.getElementById('fetch-devices').addEventListener('click', async () => {
                     const devicesDiv = document.getElementById('devices');
+                    const statusDiv = document.getElementById('status');
                     devicesDiv.textContent = 'Loading devices...';
+                    statusDiv.textContent = 'No status fetched yet.';
                     try {
                         const resp = await fetch('/api/devices');
                         const payload = await resp.json();
@@ -222,6 +230,33 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                         devicesDiv.replaceChildren(list);
                     } catch (err) {
                         devicesDiv.textContent = 'Error loading devices: ' + err;
+                    }
+                });
+
+                document.getElementById('fetch-status').addEventListener('click', async () => {
+                    const statusDiv = document.getElementById('status');
+                    const deviceId = document.getElementById('status-device-id').value.trim();
+                    if (!deviceId) {
+                        alert('Enter a device id to query status.');
+                        return;
+                    }
+                    statusDiv.textContent = 'Loading status...';
+                    try {
+                        const resp = await fetch('/api/status', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ devices: [{ id: deviceId }] })
+                        });
+                        const payload = await resp.json();
+                        if (!resp.ok) {
+                            statusDiv.textContent = payload.detail || 'Failed to load status';
+                            return;
+                        }
+                        const pre = document.createElement('pre');
+                        pre.textContent = JSON.stringify(payload, null, 2);
+                        statusDiv.replaceChildren(pre);
+                    } catch (err) {
+                        statusDiv.textContent = 'Error loading status: ' + err;
                     }
                 });
             </script>
@@ -339,14 +374,48 @@ async def api_devices() -> dict[str, Any]:
         await client.aclose()
 
 
-@app.get("/api/status")
-async def api_status(id: str) -> dict[str, Any]:
+@app.post("/api/status")
+async def api_status(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+    device_id = str(payload.get("id")) if payload.get("id") is not None else None
+    devices_payload = payload.get("devices") or []
+    device_ids: list[str] = []
+    if device_id:
+        device_ids.append(device_id)
+    elif isinstance(devices_payload, list):
+        for item in devices_payload:
+            if isinstance(item, dict) and item.get("id"):
+                device_ids.append(str(item["id"]))
+            elif isinstance(item, str):
+                device_ids.append(item)
+    if not device_ids:
+        raise HTTPException(status_code=400, detail="Missing device id to query")
+
     client = await _with_client()
     log = logging.getLogger(__name__)
     try:
-        status = await client.fetch_status(id)
-        log.info("Fetched status for %s", id)
-        return status
+        status = await client.fetch_status(device_ids)
+        log.info("Fetched status for %s", ", ".join(device_ids))
+        return JSONResponse(status_code=200, content=status)
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text
+        log.warning("Status fetch failed (%s): %s", exc.response.status_code, body[:500])
+        return JSONResponse(
+            status_code=exc.response.status_code,
+            content={"detail": body or exc.response.reason_phrase},
+        )
+    except httpx.RequestError as exc:
+        host = getattr(exc.request.url, "host", None) if exc.request else None
+        log.warning("Status fetch could not reach cloud host %s: %s", host, exc)
+        return JSONResponse(
+            status_code=502,
+            content={"detail": f"Unable to reach cloud host {host or 'unknown'}: {exc}"},
+        )
+    except ValueError:
+        log.warning("Status fetch returned non-JSON response")
+        return JSONResponse(status_code=502, content={"detail": "Cloud response was not JSON"})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.exception("Unexpected error fetching status")
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
     finally:
         await client.aclose()
 

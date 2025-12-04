@@ -22,40 +22,20 @@ Custom integration to expose U-tec locks via a local gateway.
 Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 
 ## Run the Dockerized gateway
-1. Build the image (from the repo root). **If you only have the HACS download (which contains just `custom_components/` and `const.py`), you must clone the full repo first** so that `Dockerfile`, `gateway/`, and `scripts/build_gateway.sh` exist. Run `git pull` if you cloned earlier to ensure you have the latest files.
+1. Clone the full repository (the HACS download alone does not include the
+   gateway code or Docker assets):
    ```bash
-   git clone https://github.com/Wheresitat/uteclocal.git  # skip if already cloned
+   git clone https://github.com/Wheresitat/uteclocal.git
    cd uteclocal
-
-   # quick sanity check that the needed files exist
-   ls Dockerfile gateway scripts/build_gateway.sh
-
-   # build from the repo root (uses the root-level Dockerfile)
-   docker build -t uteclocal-gateway .
-
-   # or run the helper, which checks that Dockerfile and gateway/ are present
-   ./scripts/build_gateway.sh
    ```
-   If you do not want to clone locally, you can also ask Docker to pull the
-   repo as the build context directly:
-   ```bash
-   docker build -t uteclocal-gateway https://github.com/Wheresitat/uteclocal.git#main
-   ```
-2. Run the container and persist its config/logs in `/data`:
-   ```bash
-   docker run -d \
-     --name uteclocal-gateway \
-     -p 8000:8000 \              # map container port 8000 to host port 8000 (change left side to 80 if you prefer http://<host>/)
-     -e GATEWAY_PORT=8000 \      # optional: change to 80 if you want the container to listen on port 80 internally
-     -v uteclocal-data:/data \
-     uteclocal-gateway
-   ```
-   Or use the included Compose file (will build the image if needed):
+2. Bring up the gateway with Docker Compose (will build the image on first run)
+   and persist config/logs in the included volume:
    ```bash
    docker compose up -d
    ```
-   Either way, the UI is reachable at `http://<host>:<port>/`, where `<port>`
-   is the host-side port you mapped above.
+   The UI is reachable at `http://localhost:8000/` by default. To change the
+   host port, edit `docker-compose.yml` (e.g., use `- "80:8000"` if you want to
+   reach it on `http://<host>/`).
 3. Open the UI and enter your U-tec API base URL, access key, secret key, and
    scope, then hit **Save**. Use the documented cloud host
    `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
@@ -63,32 +43,13 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    `/data/config.json` inside the volume. Use **Clear Logs** to wipe the rotating
    log file.
 
-If you prefer to pull an already-built image instead of building locally, tag
-and push `utec-local-gateway` to your registry of choice, then run the same
-`docker run` command above with that image reference.
-
-**Troubleshooting build errors**
-- If Docker cannot find `Dockerfile`, verify you are in the repo root by
-  running `ls` and confirming you see `Dockerfile` and the `gateway/`
-  directory. Re-clone the repo if those are missing.
-- If you see build errors about missing files, run `git pull` to update to the
-  latest commit, then retry `./scripts/build_gateway.sh`.
-- If you only see `custom_components/` and `const.py`, you are looking at the
-  HACS download. Either clone the repo (recommended) or use the git-URL build
-  context command shown above so Docker fetches the missing files for you.
-- If you are looking inside your Home Assistant `custom_components/` folder or
-  a HACS download, you will not see `Dockerfile` or `gateway/`. Those files are
-  only in the full repository—clone it to another folder (outside your HA
-  config) and build the image there.
-
 **Troubleshooting connectivity**
-- Run `docker ps` and confirm a container named `uteclocal-gateway` (or your
-  chosen name) is `Up`.
-- Check logs with `docker logs uteclocal-gateway` to confirm Uvicorn started on
+- Run `docker compose ps` and confirm the `gateway` service is `running`.
+- Check logs with `docker compose logs gateway` to confirm Uvicorn started on
   the expected host/port and that no errors occurred.
 - Verify network reachability with `curl http://<host>:<port>/health` from a
-  machine on the same network. A JSON `{"status":"ok"}` response confirms the
-  gateway is running and reachable.
+  machine on the same network. A JSON `{ "status": "ok" }` response confirms
+  the gateway is running and reachable.
 
 ### Gateway endpoints
 - `GET /api/devices` → returns `{ "payload": { "devices": [...] } }`
@@ -108,7 +69,7 @@ Follow these steps if you installed the custom integration via HACS:
 2. Search for **U-tec Local Gateway** (the HACS-installed integration) and
    select it.
 3. When prompted for the gateway host, enter `http://<host>:8000` (or whatever
-   host/port you mapped in the `docker run` command).
+   host/port you mapped in `docker-compose.yml`).
 4. The integration will call the gateway’s `/api/devices` endpoint to discover
    locks and then expose entities such as `lock.<device>`, plus attributes like
    battery and status. You can control lock/unlock from the entity controls in

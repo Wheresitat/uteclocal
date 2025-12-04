@@ -12,7 +12,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from .client import UtecCloudClient
-from .config import GatewayConfig, load_config, normalize_base_url, save_config
+from .config import (
+    GatewayConfig,
+    load_config,
+    normalize_base_url,
+    normalize_oauth_base_url,
+    save_config,
+)
 from .logging_utils import clear_logs, read_log_lines, setup_logging
 
 app = FastAPI(title="U-tec Local Gateway", version="0.1.0")
@@ -62,6 +68,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
             <p>Configure your U-tec cloud credentials. Values are stored on disk in <code>/data/config.json</code> inside the container.</p>
             <form id="config-form">
                 <label>API Base URL<br/><input type="text" name="base_url" value="$base_url" required /></label>
+                <label>OAuth Base URL<br/><input type="text" name="oauth_base_url" value="$oauth_base_url" required /></label>
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
                 <label>Scope<br/>
@@ -115,17 +122,18 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 document.getElementById('start-oauth').addEventListener('click', async () => {
                     const data = new FormData(form);
                     const base_url = data.get('base_url');
+                    const oauth_base_url = data.get('oauth_base_url');
                     const access_key = data.get('access_key');
                     const redirect_url = data.get('redirect_url');
                     const scope = data.get('scope');
-                    if (!base_url || !access_key || !redirect_url) {
-                        alert('Base URL, Access Key, and Redirect URL are required to build the OAuth link.');
+                    if (!base_url || !oauth_base_url || !access_key || !redirect_url) {
+                        alert('Base URL, OAuth Base URL, Access Key, and Redirect URL are required to build the OAuth link.');
                         return;
                     }
                     const resp = await fetch('/oauth/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ base_url, access_key, redirect_url, scope })
+                        body: JSON.stringify({ base_url, oauth_base_url, access_key, redirect_url, scope })
                     });
                     const payload = await resp.json();
                     if (resp.ok && payload.authorize_url) {
@@ -157,6 +165,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 document.getElementById('exchange-code').addEventListener('click', async () => {
                     const data = new FormData(form);
                     const base_url = data.get('base_url');
+                    const oauth_base_url = data.get('oauth_base_url');
                     const access_key = data.get('access_key');
                     const secret_key = data.get('secret_key');
                     const redirect_url = data.get('redirect_url');
@@ -166,7 +175,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     const resp = await fetch('/oauth/exchange', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ base_url, access_key, secret_key, redirect_url, code })
+                        body: JSON.stringify({ base_url, oauth_base_url, access_key, secret_key, redirect_url, code })
                     });
                     const payload = await resp.json();
                     if (resp.ok) {
@@ -220,6 +229,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         access_key=config.get("access_key", ""),
         secret_key=config.get("secret_key", ""),
         scope=config.get("scope", ""),
+        oauth_base_url=config.get("oauth_base_url", ""),
         redirect_url=config.get("redirect_url", ""),
         log_level=config.get("log_level", "INFO"),
         logs_html=logs_html or "No logs yet.",
@@ -238,6 +248,7 @@ async def index() -> HTMLResponse:
 @app.post("/config")
 async def update_config(
     base_url: str = Form(...),
+    oauth_base_url: str = Form(""),
     access_key: str = Form(""),
     secret_key: str = Form(""),
     scope: str = Form(""),
@@ -249,6 +260,7 @@ async def update_config(
     config.update(
         {
             "base_url": normalize_base_url(base_url),
+            "oauth_base_url": normalize_oauth_base_url(oauth_base_url),
             "access_key": access_key,
             "secret_key": secret_key,
             "scope": scope,
@@ -338,13 +350,13 @@ async def api_unlock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 @app.post("/oauth/start")
 async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
-    base_url = normalize_base_url(payload.get("base_url") or "")
+    oauth_base_url = normalize_oauth_base_url(payload.get("oauth_base_url") or "")
     access_key = (payload.get("access_key") or "").strip()
     redirect_url = (payload.get("redirect_url") or "").strip()
     scope = (payload.get("scope") or "").strip() or "user"
 
-    if not base_url or not access_key or not redirect_url:
-        raise HTTPException(status_code=400, detail="base_url, access_key, and redirect_url are required")
+    if not oauth_base_url or not access_key or not redirect_url:
+        raise HTTPException(status_code=400, detail="oauth_base_url, access_key, and redirect_url are required")
 
     params = urlencode(
         {
@@ -355,7 +367,7 @@ async def oauth_start(payload: dict[str, Any] = Body(...)) -> JSONResponse:
             "state": "uteclocal",
         }
     )
-    authorize_url = f"{base_url.rstrip('/')}/oauth/authorize?{params}"
+    authorize_url = f"{oauth_base_url.rstrip('/')}/auth?{params}"
     logging.getLogger(__name__).info("Generated OAuth authorize URL for redirect %s", redirect_url)
     return JSONResponse({"authorize_url": authorize_url})
 
@@ -373,13 +385,17 @@ def _extract_code(code: str | None, callback_url: str | None) -> str:
 @app.post("/oauth/exchange")
 async def oauth_exchange(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     base_url = normalize_base_url(payload.get("base_url") or "")
+    oauth_base_url = normalize_oauth_base_url(payload.get("oauth_base_url") or "")
     access_key = (payload.get("access_key") or "").strip()
     secret_key = (payload.get("secret_key") or "").strip()
     redirect_url = (payload.get("redirect_url") or "").strip()
     code = _extract_code(payload.get("code"), payload.get("callback_url"))
 
-    if not all([base_url, access_key, secret_key, redirect_url, code]):
-        raise HTTPException(status_code=400, detail="base_url, access_key, secret_key, redirect_url, and code are required")
+    if not all([base_url, oauth_base_url, access_key, secret_key, redirect_url, code]):
+        raise HTTPException(
+            status_code=400,
+            detail="base_url, oauth_base_url, access_key, secret_key, redirect_url, and code are required",
+        )
 
     data = {
         "grant_type": "authorization_code",
@@ -388,7 +404,7 @@ async def oauth_exchange(payload: dict[str, Any] = Body(...)) -> JSONResponse:
         "client_id": access_key,
         "client_secret": secret_key,
     }
-    token_url = f"{base_url.rstrip('/')}/oauth/token"
+    token_url = f"{oauth_base_url.rstrip('/')}/token"
     async with httpx.AsyncClient(timeout=20.0) as client:
         resp = await client.post(token_url, data=data)
 
@@ -402,6 +418,7 @@ async def oauth_exchange(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     config.update(
         {
             "base_url": base_url,
+            "oauth_base_url": oauth_base_url,
             "access_key": access_key,
             "secret_key": secret_key,
             "redirect_url": redirect_url,

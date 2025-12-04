@@ -7,6 +7,7 @@ from typing import Any, TypedDict
 
 class GatewayConfig(TypedDict, total=False):
     base_url: str
+    oauth_base_url: str
     access_key: str
     secret_key: str
     auth_code: str
@@ -26,6 +27,8 @@ LOG_PATH = DATA_DIR / "gateway.log"
 DEFAULT_CONFIG: GatewayConfig = {
     # U-tec Open API per public docs: https://openapi.u-tec.com
     "base_url": "https://openapi.u-tec.com",
+    # OAuth host documented for auth/token flow: https://oauth.u-tec.com/login
+    "oauth_base_url": "https://oauth.u-tec.com/login",
     "access_key": "",
     "secret_key": "",
     "auth_code": "",
@@ -56,6 +59,15 @@ def normalize_base_url(url: str) -> str:
     return cleaned
 
 
+def normalize_oauth_base_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return DEFAULT_CONFIG["oauth_base_url"]
+    if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+        cleaned = "https://" + cleaned
+    return cleaned.rstrip("/")
+
+
 def load_config() -> GatewayConfig:
     ensure_data_dir()
     config: GatewayConfig = DEFAULT_CONFIG.copy()
@@ -71,9 +83,13 @@ def load_config() -> GatewayConfig:
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
     # errors from the deprecated "openapi.ultraloq.com" host are avoided.
     normalized_base = normalize_base_url(config.get("base_url", ""))
+    normalized_oauth_base = normalize_oauth_base_url(config.get("oauth_base_url", ""))
     needs_save = False
     if not config.get("base_url") or config.get("base_url") != normalized_base:
         config["base_url"] = normalized_base
+        needs_save = True
+    if not config.get("oauth_base_url") or config.get("oauth_base_url") != normalized_oauth_base:
+        config["oauth_base_url"] = normalized_oauth_base
         needs_save = True
 
     if needs_save:
@@ -91,6 +107,7 @@ __all__ = [
     "GatewayConfig",
     "DEFAULT_CONFIG",
     "normalize_base_url",
+    "normalize_oauth_base_url",
     "load_config",
     "save_config",
     "CONFIG_PATH",

@@ -1,6 +1,8 @@
 version: "3.8"
+name: uteclocal
 services:
   gateway:
+    container_name: uteclocal-gateway
     image: uteclocal-gateway
     build:
       context: .

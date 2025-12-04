@@ -28,14 +28,17 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    git clone https://github.com/Wheresitat/uteclocal.git
    cd uteclocal
    ```
-2. Bring up the gateway with Docker Compose (will build the image on first run)
-   and persist config/logs in the included volume:
+2. Bring up the gateway with Docker Compose (builds the image on first run) and
+   persist config/logs in the included volume. The explicit project name avoids
+   picking up any unrelated Compose files or services on your system:
    ```bash
-   docker compose up -d
+   docker compose -p uteclocal -f docker-compose.yml up -d --build
    ```
    The UI is reachable at `http://localhost:8000/` by default. To change the
    host port, edit `docker-compose.yml` (e.g., use `- "80:8000"` if you want to
-   reach it on `http://<host>/`).
+   reach it on `http://<host>/`). If you previously launched an unrelated stack
+   and want to ensure only the gateway is running, you can stop this project
+   with `docker compose -p uteclocal down` before starting it again.
 3. Open the UI and enter your U-tec API base URL, access key, secret key, and
    scope, then hit **Save**. Use the documented cloud host
    `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`

@@ -42,7 +42,10 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 3. Open the UI and enter your U-tec API base URL, access key, secret key, and
    scope, then hit **Save**. Use the documented cloud host
    `https://openapi.ultraloq.com` (the previous placeholder `https://api.utec.com`
-   can cause name-resolution errors). The settings are stored in
+   can cause name-resolution errors). Existing configs that still reference the
+   legacy `openapi.u-tec.com` host are automatically rewritten to
+   `https://openapi.ultraloq.com` on startup; refresh the UI to confirm the saved
+   value. The settings are stored in
    `/data/config.json` inside the volume. Use **Clear Logs** to wipe the rotating
    log file.
 

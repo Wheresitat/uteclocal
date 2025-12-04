@@ -6,8 +6,9 @@ Custom integration to expose U-tec locks via a local gateway.
 - A **Dockerized FastAPI gateway** that proxies the U-tec open API and exposes
   Home Assistant–friendly endpoints (`/api/devices`, `/api/status`, `/lock`,
   `/unlock`). The gateway includes a lightweight UI for entering your API base
-  URL, OAuth base URL, access key, secret key, scope, and redirect URL, plus
-  buttons to trigger OAuth, list devices, and clear/view logs.
+  URL, OAuth base URL, **device listing path** from the docs, access key, secret
+  key, scope, and redirect URL, plus buttons to trigger OAuth, list devices, and
+  clear/view logs.
 - A **HACS-compatible custom integration** that talks to the gateway and
   surfaces your locks as entities (lock/unlock, battery level, health).
 
@@ -40,7 +41,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    reach it on `http://<host>/`). If you previously launched an unrelated stack
    and want to ensure only the gateway is running, you can stop this project
    with `docker compose -p uteclocal down` before starting it again.
-3. Open the UI and enter your U-tec API base URL, OAuth base URL, access key,
+3. Open the UI and enter your U-tec API base URL, OAuth base URL, **devices
+   endpoint path** (`/openapi/v1/devices` per
+   https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e), access key,
    secret key, scope (`openapi` per the docs), and the exact redirect URL you
    registered for the app, then hit **Save** or directly **Start OAuth** to
    launch the authorization URL in a new tab. Use the documented cloud host

@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 class GatewayConfig(TypedDict, total=False):
     base_url: str
     oauth_base_url: str
+    devices_path: str
     access_key: str
     secret_key: str
     auth_code: str
@@ -27,6 +28,8 @@ LOG_PATH = DATA_DIR / "gateway.log"
 DEFAULT_CONFIG: GatewayConfig = {
     # U-tec Open API per public docs: https://openapi.u-tec.com
     "base_url": "https://openapi.u-tec.com",
+    # Documented device listing path: https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e
+    "devices_path": "/openapi/v1/devices",
     # OAuth host documented for auth/token flow: https://oauth.u-tec.com
     "oauth_base_url": "https://oauth.u-tec.com",
     "access_key": "",
@@ -60,6 +63,13 @@ def normalize_base_url(url: str) -> str:
     return cleaned
 
 
+def normalize_devices_path(path: str) -> str:
+    cleaned = (path or "").strip() or DEFAULT_CONFIG["devices_path"]
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned.rstrip("/") or DEFAULT_CONFIG["devices_path"]
+
+
 def normalize_oauth_base_url(url: str) -> str:
     cleaned = (url or "").strip()
     if not cleaned:
@@ -89,12 +99,16 @@ def load_config() -> GatewayConfig:
     # errors from the deprecated "openapi.ultraloq.com" host are avoided.
     normalized_base = normalize_base_url(config.get("base_url", ""))
     normalized_oauth_base = normalize_oauth_base_url(config.get("oauth_base_url", ""))
+    normalized_devices_path = normalize_devices_path(config.get("devices_path", ""))
     needs_save = False
     if not config.get("base_url") or config.get("base_url") != normalized_base:
         config["base_url"] = normalized_base
         needs_save = True
     if not config.get("oauth_base_url") or config.get("oauth_base_url") != normalized_oauth_base:
         config["oauth_base_url"] = normalized_oauth_base
+        needs_save = True
+    if not config.get("devices_path") or config.get("devices_path") != normalized_devices_path:
+        config["devices_path"] = normalized_devices_path
         needs_save = True
 
     if needs_save:
@@ -113,6 +127,7 @@ __all__ = [
     "DEFAULT_CONFIG",
     "normalize_base_url",
     "normalize_oauth_base_url",
+    "normalize_devices_path",
     "load_config",
     "save_config",
     "CONFIG_PATH",

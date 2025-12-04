@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from urllib.parse import urljoin
+
 import logging
 
 import httpx
@@ -37,7 +39,9 @@ class UtecCloudClient:
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices"
+        devices_path = self._config.get("devices_path") or "/openapi/v1/devices"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", devices_path.lstrip("/"))
+        logging.getLogger(__name__).info("Requesting devices from %s", url)
         resp = await self._client.get(url, headers=self._headers(), follow_redirects=True)
         resp.raise_for_status()
         try:

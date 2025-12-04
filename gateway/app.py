@@ -16,6 +16,7 @@ from .config import (
     GatewayConfig,
     load_config,
     normalize_base_url,
+    normalize_devices_path,
     normalize_oauth_base_url,
     save_config,
 )
@@ -69,6 +70,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
             <form id="config-form">
                 <label>API Base URL<br/><input type="text" name="base_url" value="$base_url" required /></label>
                 <label>OAuth Base URL<br/><input type="text" name="oauth_base_url" value="$oauth_base_url" required /></label>
+                <label>Devices Endpoint Path<br/><input type="text" name="devices_path" value="$devices_path" placeholder="/openapi/v1/devices" /></label>
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
                 <label>Scope<br/>
@@ -231,6 +233,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         secret_key=config.get("secret_key", ""),
         scope=config.get("scope", ""),
         oauth_base_url=config.get("oauth_base_url", ""),
+        devices_path=config.get("devices_path", ""),
         redirect_url=config.get("redirect_url", ""),
         log_level=config.get("log_level", "INFO"),
         logs_html=logs_html or "No logs yet.",
@@ -250,6 +253,7 @@ async def index() -> HTMLResponse:
 async def update_config(
     base_url: str = Form(...),
     oauth_base_url: str = Form(""),
+    devices_path: str = Form(""),
     access_key: str = Form(""),
     secret_key: str = Form(""),
     scope: str = Form(""),
@@ -262,6 +266,7 @@ async def update_config(
         {
             "base_url": normalize_base_url(base_url),
             "oauth_base_url": normalize_oauth_base_url(oauth_base_url),
+            "devices_path": normalize_devices_path(devices_path),
             "access_key": access_key,
             "secret_key": secret_key,
             "scope": scope,

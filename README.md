@@ -47,7 +47,8 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    legacy `openapi.u-tec.com` host are automatically rewritten to
    `https://openapi.ultraloq.com` on startup; refresh the UI to confirm the saved
    value. The settings are stored in
-   `/data/config.json` inside the volume. Use **Clear Logs** to wipe the rotating
+   `/data/config.json` inside the volume and can be managed entirely through the
+   UI—no environment file is required. Use **Clear Logs** to wipe the rotating
    log file.
 
 **Troubleshooting connectivity**

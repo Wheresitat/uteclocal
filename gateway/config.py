@@ -18,7 +18,8 @@ CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "gateway.log"
 
 DEFAULT_CONFIG: GatewayConfig = {
-    "base_url": "https://api.utec.com",
+    # U-tec Open API per public docs: https://openapi.ultraloq.com
+    "base_url": "https://openapi.ultraloq.com",
     "access_key": "",
     "secret_key": "",
     "log_level": "INFO",

@@ -50,9 +50,11 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
      uteclocal-gateway
    ```
 3. Open the UI at `http://<host>:8000/`, enter your U-tec API base URL,
-   access key, secret key, and scope, and hit **Save**. The settings are stored
-   in `/data/config.json` inside the volume. Use **Clear Logs** to wipe the
-   rotating log file.
+   access key, secret key, and scope, and hit **Save**. Use the documented
+   cloud host `https://openapi.ultraloq.com` (the previous placeholder
+   `https://api.utec.com` can cause name-resolution errors). The settings are
+   stored in `/data/config.json` inside the volume. Use **Clear Logs** to wipe
+   the rotating log file.
 
 If you prefer to pull an already-built image instead of building locally, tag
 and push `utec-local-gateway` to your registry of choice, then run the same

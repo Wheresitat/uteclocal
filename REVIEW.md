@@ -1,55 +1,56 @@
-# U-tec Local Gateway – Specification Review
+# U-tec Local Bridge – Requirement Verification
 
-This document compares the current repository against the requested project goals and highlights gaps.
+This document re-evaluates the current repository against the original project requirements and notes any remaining gaps.
 
-## High-level coverage
+## Gateway service
 
-* The repository includes a FastAPI gateway (`gateway/app.py`) with minimal UI for entering base URL, access key, secret key, and log level.
-* A HACS integration exists under `custom_components/uteclocal` with a config flow and lock entity.
-* Many required features from the project overview are not yet implemented.
+### Configuration & secrets
+* ✅ UI exposes API base URL, client ID/secret, access key/secret, polling interval, and log level fields with validation for required base URL and persistence to `/data/config.json` via `gateway.config` and `gateway.app`. Secrets are masked in API responses and best-effort file permissions (0700 dir, 0600 file) are applied on save.
+* ⚠️ Stored secrets remain in plain JSON on disk; no additional encryption/keyring layer is provided.
 
-## Requirements assessment
+### OAuth2 flow
+* ✅ `/auth/start`, `/auth/callback`, and `/auth/status` implement authorization URL generation, code exchange, token refresh persistence, and token status exposure. The UI includes “Start OAuth Flow” and manual code submission controls.
+* ⚠️ No explicit CSRF/state parameter handling is present during authorization URL generation.
 
-### Configuration & Secrets (Gateway)
-* ✅ Basic config storage in `/data/config.json` with fields for base URL, access key, secret key, and log level (`gateway/config.py`, `gateway/app.py`).
-* ❌ No support for client ID/secret, polling interval, or API base URL override via UI with validation. Secrets are written in plain JSON without explicit permissions or masking in logs.
-* ❌ Startup does not validate required fields or surface errors in the UI.
-
-### OAuth2 Flow Management
-* ❌ No OAuth flow endpoints (`/auth/start`, `/auth/callback`, `/auth/status`), token exchange, refresh handling, or UI elements for authorization.
-
-### Polling & Device Sync
-* ❌ No background polling loop to fetch devices or states. Gateway only proxies single-shot requests to a configured base URL.
-* ❌ No handling for invalid tokens, paused polling, or cached device state.
+### Polling & device sync
+* ✅ `gateway.poller.Poller` runs as a background task on startup/save/config change, refreshes tokens ahead of expiry, and syncs device lists plus per-device status into the shared `gateway.state` cache. Polling interval is configurable (min 15s) and errors surface through `STATE.status()`.
+* ✅ Token expiry and refresh outcomes are tracked so HA/UI can see validity; polling stops gracefully when base URL or tokens are missing.
 
 ### Local API for Home Assistant
-* ✅ Provides `/api/devices` and `/api/status` proxies plus `/lock` and `/unlock` commands (`gateway/app.py`).
-* ❌ Missing REST conventions from the spec (e.g., `/api/devices/<id>` routes, structured status, proper 4xx/5xx handling). Logs endpoint returns plain text but lacks pagination or JSON format.
+* ✅ Endpoints: `/api/status`, `/api/devices`, `/api/devices/{id}`, `/api/devices/{id}/lock`, `/api/devices/{id}/unlock`, `/api/logs` (GET/DELETE), `/logs` (plaintext), and legacy `/lock`/`/unlock` payload-based routes. Proper 4xx responses are returned for missing/unknown device IDs or misconfiguration.
+* ⚠️ REST API currently returns cached device payloads without normalization; capability/state mapping is left to clients.
 
-### Web UI (Frontend)
-* ✅ Minimal HTML form served at `/` for config and log viewing (`gateway/app.py`).
-* ❌ No sections for OAuth initiation, token status, device viewer, or rich log viewer with timestamps and levels. Secrets are not masked in the form display.
+### Web UI
+* ✅ Single-page HTML served at `/` with sections for configuration, OAuth, logs, bridge status, and device table (lock/battery/online fields with raw JSON viewer).
+* ⚠️ UI does not yet provide modal-based JSON pretty rendering or log level filtering; styling is basic and there is no websocket-based live refresh.
 
 ### Logging
-* ✅ Centralized rotating file logger (`gateway/logging_utils.py`).
-* ❌ Logs are not exposed as JSON, do not show levels/timestamps in UI, and no max entry controls beyond rotation. Clearing logs simply deletes the file.
+* ✅ Central logging to `/data/gateway.log` with read/clear support, exposure via UI and API, and log level configuration in UI. Log output is timestamped via Python logging defaults.
+* ⚠️ In-memory size limits for `/api/logs` are not enforced beyond filesystem rotation, and log entries are returned as plain strings rather than structured JSON with levels/timestamps.
 
-### Docker Requirements
-* ✅ Basic Dockerfile builds the gateway and exposes port 8000 with `/data` volume (`gateway/Dockerfile`).
-* ❌ No docker-compose example, environment variable support for port/log level, startup retries, or graceful shutdown handling beyond uvicorn defaults. Default port differs from required 8124.
+### Docker & runtime
+* ✅ Gateway Dockerfile exposes port 8124, installs runtime deps only, and mounts `/data`. `docker-compose.yml` provides the uteclocal service with volume, restart policy, and environment placeholders for port/log level.
+* ⚠️ No explicit healthcheck or startup retry loop beyond Docker’s restart policy.
 
-### Home Assistant HACS Custom Integration
-* ✅ HACS files present with config flow and lock platform (`custom_components/uteclocal`).
-* ❌ Integration does not poll the bridge on an interval, lacks sensors/binary_sensors for battery/online status, and does not expose options flow. Error handling for unreachable gateway is minimal. `manifest.json` marks `iot_class` as `cloud_polling` instead of `local_polling` and version is 1.0.0 vs requested 0.1.0.
+## Home Assistant (HACS) integration
 
-### Documentation
-* ❌ README lacks required setup guidance for OAuth, docker-compose, scan intervals, and entity mapping. No mention of security or log redaction.
+### Repository structure & manifest
+* ✅ HACS-compatible structure under `custom_components/uteclocal` with manifest declaring `local_polling`, config flow enabled, and integration type `hub`.
+* ⚠️ Manifest version remains `1.0.0` rather than the requested `0.1.0`, though this is cosmetic.
 
-## Summary of major gaps
-1. OAuth2 flow (UI + endpoints) is entirely missing.
-2. Background polling/cache layer and richer local API endpoints are absent.
-3. UI lacks configuration breadth, device viewer, and token/log status views.
-4. Docker-compose example and env-based configuration are not provided; default port differs from spec.
-5. HACS integration is minimal—no sensors, options flow, or robust status polling/error handling.
+### Config flow & options
+* ✅ UI config flow accepts bridge host (default http://localhost:8124) and validates via `/api/status`; options flow allows adjusting host and scan interval with re-validation.
 
-These areas need implementation to satisfy the project requirements.
+### Entities & polling
+* ✅ Uses a shared `DataUpdateCoordinator` to poll `/api/devices` at configurable intervals and expose locks plus battery and online sensors per device. Entities surface device attributes and mark unavailable on coordinator errors.
+* ⚠️ Additional optional sensors (last operation/user, door sensor) are not yet implemented; scan interval defaults align with consts but are not user-documented in README.
+
+### Commands
+* ✅ Lock entities call `/api/devices/{id}/lock` and `/api/devices/{id}/unlock`, with payload-based fallbacks, updating state from responses.
+
+## Documentation
+* ✅ README covers OAuth-enabled setup, Docker usage, API endpoints, and Home Assistant integration steps, including offline push guidance and local branch publishing notes.
+* ⚠️ No screenshots or UX walkthroughs are provided; security guidance is limited to permission tightening without encryption.
+
+## Overall status
+The latest deliverables implement the core functional requirements: configurable gateway with OAuth, background polling and caching, REST endpoints for HA/UI, basic UI with device/log views, Docker artifacts on port 8124, and a HACS integration with config/option flows plus lock and sensor entities. Remaining items are primarily hardening and UX polish (state parameter in OAuth, structured logs, optional sensors, manifest version alignment, and richer UI/healthchecks).

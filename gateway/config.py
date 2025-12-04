@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -19,11 +20,11 @@ LOG_PATH = DATA_DIR / "gateway.log"
 
 DEFAULT_CONFIG: GatewayConfig = {
     # U-tec Open API per public docs: https://openapi.ultraloq.com
-    "base_url": "https://openapi.ultraloq.com",
-    "access_key": "",
-    "secret_key": "",
-    "log_level": "INFO",
-    "scope": "",
+    "base_url": os.getenv("GATEWAY_BASE_URL", "https://openapi.ultraloq.com"),
+    "access_key": os.getenv("GATEWAY_ACCESS_KEY", ""),
+    "secret_key": os.getenv("GATEWAY_SECRET_KEY", ""),
+    "log_level": os.getenv("GATEWAY_LOG_LEVEL", "INFO"),
+    "scope": os.getenv("GATEWAY_SCOPE", ""),
 }
 
 
@@ -42,6 +43,20 @@ def load_config() -> GatewayConfig:
             pass
     if loaded:
         config.update(loaded)
+
+    # Environment variables always take precedence over saved values so the
+    # container can be configured via docker compose without manually editing
+    # /data/config.json.
+    for key, env_var in (
+        ("base_url", "GATEWAY_BASE_URL"),
+        ("access_key", "GATEWAY_ACCESS_KEY"),
+        ("secret_key", "GATEWAY_SECRET_KEY"),
+        ("log_level", "GATEWAY_LOG_LEVEL"),
+        ("scope", "GATEWAY_SCOPE"),
+    ):
+        env_value = os.getenv(env_var)
+        if env_value is not None and env_value != "":
+            config[key] = env_value
 
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
     # errors from the legacy "openapi.u-tec.com" host are avoided.

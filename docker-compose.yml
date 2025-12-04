@@ -7,13 +7,31 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
-      GATEWAY_HOST: 0.0.0.0
-      GATEWAY_PORT: 8000
+      GATEWAY_HOST: ${GATEWAY_HOST:-0.0.0.0}
+      GATEWAY_PORT: ${GATEWAY_PORT:-8000}
+      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL:-https://openapi.ultraloq.com}
+      GATEWAY_ACCESS_KEY: ${GATEWAY_ACCESS_KEY:-}
+      GATEWAY_SECRET_KEY: ${GATEWAY_SECRET_KEY:-}
+      GATEWAY_SCOPE: ${GATEWAY_SCOPE:-}
+      GATEWAY_LOG_LEVEL: ${GATEWAY_LOG_LEVEL:-INFO}
     ports:
       - "8000:8000"
     volumes:
       - uteclocal-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python - <<'PY'\nimport sys, urllib.request\ntry:\n    urllib.request.urlopen('http://localhost:8000/health', timeout=5)\nexcept Exception:\n    sys.exit(1)\nsys.exit(0)\nPY"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 volumes:
   uteclocal-data:

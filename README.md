@@ -79,7 +79,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 - `POST /api/status` → body `{ "devices": [{ "id": "<device_id>" }] }` posts
   the documented `Uhome.Device/Query` payload to the same action endpoint and
   returns the raw cloud status response
-- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }`
+- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }` posts a
+  `Uhome.Device/Lock` or `Uhome.Device/Unlock` action payload to the configured
+  action endpoint (defaults to `https://api.u-tec.com/action`)
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 
 Point the Home Assistant integration at `http://<host>:8000` so it can fetch
@@ -93,7 +95,13 @@ Follow these steps if you installed the custom integration via HACS:
 2. Search for **U-tec Local Gateway** (the HACS-installed integration) and
    select it.
 3. When prompted for the gateway host, enter `http://<host>:8000` (or whatever
-   host/port you mapped in `docker-compose.yml`).
+   host/port you mapped in `docker-compose.yml`). If you see a port field (for
+   example, a form that defaults to `8100`), change it to `8000` to match the
+   gateway’s published port. Leave the **API key** field empty—the gateway
+   endpoints are already authenticated through the cloud tokens you configure in
+   the UI and do not require an extra per-request key. If your Home Assistant is
+   running over HTTPS but the gateway is HTTP-only, uncheck **Verify SSL
+   certificates** for this connection so HA will accept the plain HTTP endpoint.
 4. The integration will call the gateway’s `/api/devices` endpoint to discover
    locks and then expose entities such as `lock.<device>`, plus attributes like
    battery and status. You can control lock/unlock from the entity controls in

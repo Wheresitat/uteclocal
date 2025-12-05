@@ -102,8 +102,24 @@ class UtecCloudClient:
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/{target}"
-        resp = await self._client.post(url, headers=self._headers(), follow_redirects=True)
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": target.capitalize(),
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {"devices": [{"id": device_id}]},
+        }
+        logging.getLogger(__name__).info("Sending %s request for %s to %s", target, device_id, url)
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 

@@ -374,8 +374,7 @@ async def api_devices() -> dict[str, Any]:
         await client.aclose()
 
 
-@app.post("/api/status")
-async def api_status(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+def _extract_device_ids(payload: dict[str, Any]) -> list[str]:
     device_id = str(payload.get("id")) if payload.get("id") is not None else None
     devices_payload = payload.get("devices") or []
     device_ids: list[str] = []
@@ -387,6 +386,10 @@ async def api_status(payload: dict[str, Any] = Body(...)) -> JSONResponse:
                 device_ids.append(str(item["id"]))
             elif isinstance(item, str):
                 device_ids.append(item)
+    return device_ids
+
+
+async def _fetch_status_for(device_ids: list[str]) -> JSONResponse:
     if not device_ids:
         raise HTTPException(status_code=400, detail="Missing device id to query")
 
@@ -418,6 +421,19 @@ async def api_status(payload: dict[str, Any] = Body(...)) -> JSONResponse:
         return JSONResponse(status_code=500, content={"detail": str(exc)})
     finally:
         await client.aclose()
+
+
+@app.post("/api/status")
+async def api_status(payload: dict[str, Any] = Body(...)) -> JSONResponse:
+    device_ids = _extract_device_ids(payload)
+    return await _fetch_status_for(device_ids)
+
+
+@app.get("/api/status")
+async def api_status_get(id: str | None = None) -> JSONResponse:  # type: ignore[override]
+    """Compatibility GET endpoint for clients (like HA) that query status via query params."""
+    device_ids = _extract_device_ids({"id": id} if id else {})
+    return await _fetch_status_for(device_ids)
 
 
 @app.post("/lock")

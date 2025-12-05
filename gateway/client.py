@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from urllib.parse import urljoin
+
+import logging
+
 import httpx
+from uuid import uuid4
 
 from .config import GatewayConfig
 
@@ -20,38 +25,101 @@ class UtecCloudClient:
         self._client = httpx.AsyncClient(timeout=15.0)
 
     def _headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        if self._config.get("access_key"):
-            headers["X-Access-Key"] = self._config["access_key"]
-        if self._config.get("secret_key"):
-            headers["X-Secret-Key"] = self._config["secret_key"]
-        if self._config.get("scope"):
-            headers["X-Scope"] = self._config["scope"]
+        headers: dict[str, str] = {"Accept": "application/json"}
+        token = (self._config.get("access_token") or "").strip()
+        token_type = (self._config.get("token_type") or "Bearer").strip()
+        if token:
+            headers["Authorization"] = f"{token_type} {token}"
+        else:
+            if self._config.get("access_key"):
+                headers["X-Access-Key"] = self._config["access_key"]
+            if self._config.get("secret_key"):
+                headers["X-Secret-Key"] = self._config["secret_key"]
+            if self._config.get("scope"):
+                headers["X-Scope"] = self._config["scope"]
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices"
-        resp = await self._client.get(url, headers=self._headers())
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
+        logging.getLogger(__name__).info("Requesting devices from %s", url)
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": "Discovery",
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {},
+        }
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError:
+            logging.getLogger(__name__).warning("Device list was not JSON: %s", resp.text[:500])
+            raise
         if isinstance(data, dict):
             return data.get("devices") or data.get("payload", {}).get("devices", []) or []
         if isinstance(data, list):
             return data
         return []
 
-    async def fetch_status(self, device_id: str) -> dict[str, Any]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/status"
-        resp = await self._client.get(url, headers=self._headers())
+    async def fetch_status(self, device_ids: list[str]) -> dict[str, Any]:
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
+        logging.getLogger(__name__).info("Requesting device status from %s", url)
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": "Query",
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {
+                "devices": [{"id": device_id} for device_id in device_ids],
+            },
+        }
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError:
+            logging.getLogger(__name__).warning("Status response was not JSON: %s", resp.text[:500])
+            raise
         if isinstance(data, dict):
             return data
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
-        url = f"{self._config['base_url'].rstrip('/')}/devices/{device_id}/{target}"
-        resp = await self._client.post(url, headers=self._headers())
+        action_path = self._config.get("action_path") or "/action"
+        url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
+        payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": target.capitalize(),
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {"devices": [{"id": device_id}]},
+        }
+        logging.getLogger(__name__).info("Sending %s request for %s to %s", target, device_id, url)
+        resp = await self._client.post(
+            url,
+            headers={"Content-Type": "application/json", **self._headers()},
+            json=payload,
+            follow_redirects=True,
+        )
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 

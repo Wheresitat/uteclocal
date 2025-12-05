@@ -116,23 +116,43 @@ class UtecCloudClient:
         action_path = self._config.get("action_path") or "/action"
         url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
 
+        target_locked = "LOCKED" if target.lower() == "lock" else "UNLOCKED"
+        lock_keyword = "LOCK" if target.lower() == "lock" else "UNLOCK"
         action_attempts: list[list[dict[str, str | dict[str, str]]]] = [
             [
                 {
                     "name": "LockState",
-                    "value": "LOCKED" if target.lower() == "lock" else "UNLOCKED",
+                    "value": target_locked,
+                }
+            ],
+            [
+                {
+                    "name": "LockState",
+                    "value": {"targetState": target_locked},
                 }
             ],
             [
                 {
                     "name": "Lock",
-                    "value": target.upper(),
+                    "value": lock_keyword,
                 }
             ],
             [
                 {
                     "name": "Lock",
-                    "value": {"targetState": "LOCKED" if target.lower() == "lock" else "UNLOCKED"},
+                    "value": {"targetState": target_locked},
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": {"state": lock_keyword},
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": {"value": lock_keyword},
                 }
             ],
         ]
@@ -146,7 +166,7 @@ class UtecCloudClient:
                     "namespace": "Uhome.Device",
                     "name": "Control",
                     "messageId": str(uuid4()),
-                    "payloadVersion": 1,
+                    "payloadVersion": "1",
                 },
                 "payload": {
                     "devices": [

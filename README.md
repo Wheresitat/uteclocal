@@ -1,6 +1,6 @@
 # U-tec Local Gateway – Home Assistant Integration
 
-**Version: 1.3.1**
+**Version: 1.3.2**
 Increment this version string in the README whenever new functionality ships so users can confirm they are on the latest documented baseline.
 
 Custom integration to expose U-tec locks via a local gateway.
@@ -88,11 +88,12 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   returns the raw cloud status response
 - `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
   JSON body `{ "id": "<device_id>" }` post a documented
-  `Uhome.Device/Control` payload. The gateway now tries the stricter
-  `LockState`/`LOCKED|UNLOCKED` shape first and falls back to
-  `Lock`/`LOCK|UNLOCK` if the cloud returns HTTP 400, so OAuth-issued tokens
-  work against both documented payload variants. Requests are sent to the
-  configured action endpoint (defaults to `https://api.u-tec.com/action`).
+  `Uhome.Device/Control` payload. The gateway now cycles through the documented
+  `LockState` and `Lock` action shapes (including nested `targetState`/`state`
+  variants) to satisfy the cloud payload expectations before giving up, so
+  OAuth-issued tokens work against both documented payload variants. Requests
+  are sent to the configured action endpoint (defaults to
+  `https://api.u-tec.com/action`).
 - `GET /devices` mirrors `/api/devices` for clients that expect the non-`/api`
   path.
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`

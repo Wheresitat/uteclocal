@@ -413,6 +413,13 @@ async def api_devices() -> dict[str, Any]:
         await client.aclose()
 
 
+@app.get("/devices")
+async def api_devices_alias() -> dict[str, Any]:
+    """Compatibility alias for clients that call /devices without the /api prefix."""
+
+    return await api_devices()
+
+
 def _extract_device_ids(payload: dict[str, Any]) -> list[str]:
     device_id = str(payload.get("id")) if payload.get("id") is not None else None
     devices_payload = payload.get("devices") or []

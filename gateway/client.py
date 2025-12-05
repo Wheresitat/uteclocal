@@ -102,45 +102,70 @@ class UtecCloudClient:
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
-        """Send a lock/unlock action using the documented control payload.
+        """Send a lock/unlock action using documented control payload shapes.
 
-        The U-tec docs describe posting a `Uhome.Device/Control` request with
-        an `actions` list. Align the payload here so OAuth-issued tokens are
-        accepted by the cloud action endpoint.
+        The public docs show a `Uhome.Device/Control` request with an actions
+        list. Some references use `LockState`/`LOCKED` instead of
+        `Lock`/`LOCK`, so attempt both shapes (newer one first) to avoid 400s
+        from strict payload validation.
         """
 
         action_path = self._config.get("action_path") or "/action"
         url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
-        payload = {
-            "header": {
-                "namespace": "Uhome.Device",
-                "name": "Control",
-                "messageId": str(uuid4()),
-                "payloadVersion": "1",
-            },
-            "payload": {
-                "devices": [
-                    {
-                        "id": device_id,
-                        "actions": [
-                            {
-                                "name": target.capitalize(),
-                                "value": target.upper(),
-                            }
-                        ],
-                    }
-                ]
-            },
-        }
-        logging.getLogger(__name__).info("Sending %s control for %s to %s", target, device_id, url)
-        resp = await self._client.post(
-            url,
-            headers={"Content-Type": "application/json", **self._headers()},
-            json=payload,
-            follow_redirects=True,
-        )
-        resp.raise_for_status()
-        return resp.json() if resp.content else {}
+
+        action_attempts: list[tuple[str, str]] = [
+            ("LockState", "LOCKED" if target.lower() == "lock" else "UNLOCKED"),
+            ("Lock", target.upper()),
+        ]
+        headers = {"Content-Type": "application/json", **self._headers()}
+        log = logging.getLogger(__name__)
+        last_exc: httpx.HTTPStatusError | None = None
+
+        for action_name, action_value in action_attempts:
+            payload = {
+                "header": {
+                    "namespace": "Uhome.Device",
+                    "name": "Control",
+                    "messageId": str(uuid4()),
+                    "payloadVersion": "1",
+                },
+                "payload": {
+                    "devices": [
+                        {
+                            "id": device_id,
+                            "actions": [
+                                {
+                                    "name": action_name,
+                                    "value": action_value,
+                                }
+                            ],
+                        }
+                    ]
+                },
+            }
+            log.info(
+                "Sending %s control (%s=%s) for %s to %s", target, action_name, action_value, device_id, url
+            )
+            resp = await self._client.post(
+                url,
+                headers=headers,
+                json=payload,
+                follow_redirects=True,
+            )
+            try:
+                resp.raise_for_status()
+                return resp.json() if resp.content else {}
+            except httpx.HTTPStatusError as exc:
+                body = exc.response.text
+                log.warning(
+                    "Control attempt %s/%s failed (%s): %s", action_name, action_value, exc.response.status_code, body[:500]
+                )
+                last_exc = exc
+                continue
+
+        if last_exc:
+            raise last_exc
+        return {}
 
     async def aclose(self) -> None:
         await self._client.aclose()

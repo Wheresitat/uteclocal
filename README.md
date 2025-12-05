@@ -84,9 +84,13 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   returns the raw cloud status response
 - `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
   JSON body `{ "id": "<device_id>" }` post a documented
-  `Uhome.Device/Control` payload that includes an `actions` entry of
-  `[{"name": "Lock", "value": "LOCK"}]` or `[{"name": "Unlock", "value": "UNLOCK"}]`
-  to the configured action endpoint (defaults to `https://api.u-tec.com/action`)
+  `Uhome.Device/Control` payload. The gateway now tries the stricter
+  `LockState`/`LOCKED|UNLOCKED` shape first and falls back to
+  `Lock`/`LOCK|UNLOCK` if the cloud returns HTTP 400, so OAuth-issued tokens
+  work against both documented payload variants. Requests are sent to the
+  configured action endpoint (defaults to `https://api.u-tec.com/action`).
+- `GET /devices` mirrors `/api/devices` for clients that expect the non-`/api`
+  path.
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 
 Point the Home Assistant integration at `http://<host>:8000` so it can fetch

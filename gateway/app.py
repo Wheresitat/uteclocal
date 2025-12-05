@@ -84,7 +84,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
             </style>
         </head>
         <body>
-            <h1>U-tec Local Gateway</h1>
+            <h1>U-tec Local Gateway <span class="muted">v$version</span></h1>
             <div class="muted">Version: $version (mirrors README)</div>
             <p>Configure your U-tec cloud credentials. Values are stored on disk in <code>/data/config.json</code> inside the container.</p>
             <form id="config-form">
@@ -142,6 +142,8 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <div id="logs">$logs_html</div>
             </div>
             <script>
+                document.title = 'U-tec Local Gateway v$version';
+
                 const form = document.getElementById('config-form');
                 form.addEventListener('submit', async (e) => {
                     e.preventDefault();

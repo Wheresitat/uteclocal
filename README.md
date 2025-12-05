@@ -83,13 +83,45 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   the documented `Uhome.Device/Query` payload to the same action endpoint and
   returns the raw cloud status response
 - `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
-  JSON body `{ "id": "<device_id>" }` post a `Uhome.Device/Lock` or
-  `Uhome.Device/Unlock` action payload to the configured action endpoint
-  (defaults to `https://api.u-tec.com/action`)
+  JSON body `{ "id": "<device_id>" }` post a documented
+  `Uhome.Device/Control` payload that includes an `actions` entry of
+  `[{"name": "Lock", "value": "LOCK"}]` or `[{"name": "Unlock", "value": "UNLOCK"}]`
+  to the configured action endpoint (defaults to `https://api.u-tec.com/action`)
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 
 Point the Home Assistant integration at `http://<host>:8000` so it can fetch
 devices and control them.
+
+#### Curl smoke tests
+With the gateway running you can sanity-check the endpoints using `curl` (or
+run the helper script at `scripts/curl-smoke.sh`). Replace `<host>` and
+`<device_id>` with your values:
+
+```bash
+# Basic reachability
+curl http://<host>:8000/health
+
+# Device discovery (requires saved OAuth token or access/secret key)
+curl --fail-with-body http://<host>:8000/api/devices
+
+# Status query for a specific lock
+curl --fail-with-body -X POST http://<host>:8000/api/status \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<device_id>"}'
+
+# Lock / unlock actions using the documented Control payload
+curl --fail-with-body -X POST http://<host>:8000/api/lock \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<device_id>"}'
+
+curl --fail-with-body -X POST http://<host>:8000/api/unlock \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<device_id>"}'
+```
+
+To exercise all of the above in one go, set `HOST=http://<host>:8000` and
+`DEVICE_ID=<device_id>` (MAC) and run `./scripts/curl-smoke.sh`. Use
+`SKIP_DEVICES=1` if you only want to hit health/status/control.
 
 ## Connect to Home Assistant
 

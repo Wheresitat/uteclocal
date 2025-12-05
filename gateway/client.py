@@ -102,18 +102,37 @@ class UtecCloudClient:
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
+        """Send a lock/unlock action using the documented control payload.
+
+        The U-tec docs describe posting a `Uhome.Device/Control` request with
+        an `actions` list. Align the payload here so OAuth-issued tokens are
+        accepted by the cloud action endpoint.
+        """
+
         action_path = self._config.get("action_path") or "/action"
         url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
         payload = {
             "header": {
                 "namespace": "Uhome.Device",
-                "name": target.capitalize(),
+                "name": "Control",
                 "messageId": str(uuid4()),
                 "payloadVersion": "1",
             },
-            "payload": {"devices": [{"id": device_id}]},
+            "payload": {
+                "devices": [
+                    {
+                        "id": device_id,
+                        "actions": [
+                            {
+                                "name": target.capitalize(),
+                                "value": target.upper(),
+                            }
+                        ],
+                    }
+                ]
+            },
         }
-        logging.getLogger(__name__).info("Sending %s request for %s to %s", target, device_id, url)
+        logging.getLogger(__name__).info("Sending %s control for %s to %s", target, device_id, url)
         resp = await self._client.post(
             url,
             headers={"Content-Type": "application/json", **self._headers()},

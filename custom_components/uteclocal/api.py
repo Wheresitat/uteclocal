@@ -41,9 +41,8 @@ class UtecLocalAPI:
     async def async_get_status(self, device_id: str) -> dict[str, Any]:
         """Get raw status JSON for a device."""
         url = f"{self._host}/api/status"
-        params = {"id": device_id}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
+            async with session.post(url, json={"id": device_id}) as resp:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         return data

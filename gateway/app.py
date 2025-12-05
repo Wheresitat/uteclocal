@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from string import Template
 from typing import Any
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -40,6 +42,21 @@ async def _startup() -> None:
     logging.getLogger(__name__).info("Gateway starting with base URL %s", config.get("base_url"))
 
 
+def _read_readme_version() -> str:
+    readme_path = Path(__file__).resolve().parent.parent / "README.md"
+    if not readme_path.exists():
+        return "unknown"
+    pattern = re.compile(r"^\*\*Version:\s*([^*]+)\*\*", re.IGNORECASE)
+    for line in readme_path.read_text().splitlines():
+        match = pattern.search(line.strip())
+        if match:
+            return match.group(1).strip()
+    return "unknown"
+
+
+README_VERSION = _read_readme_version()
+
+
 def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
     logs_html = "<br>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in log_lines)
     token_status = ""
@@ -67,7 +84,8 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
             </style>
         </head>
         <body>
-            <h1>U-tec Local Gateway</h1>
+            <h1>U-tec Local Gateway <span class="muted">v$version</span></h1>
+            <div class="muted">Version: $version (mirrors README)</div>
             <p>Configure your U-tec cloud credentials. Values are stored on disk in <code>/data/config.json</code> inside the container.</p>
             <form id="config-form">
                 <label>API Base URL<br/><input type="text" name="base_url" value="$base_url" required /></label>
@@ -124,6 +142,8 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <div id="logs">$logs_html</div>
             </div>
             <script>
+                document.title = 'U-tec Local Gateway v$version';
+
                 const form = document.getElementById('config-form');
                 form.addEventListener('submit', async (e) => {
                     e.preventDefault();
@@ -316,6 +336,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         logs_html=logs_html or "No logs yet.",
         auth_code=config.get("auth_code", ""),
         token_status=token_status,
+        version=README_VERSION,
     )
 
 

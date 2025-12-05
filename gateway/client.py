@@ -30,13 +30,16 @@ class UtecCloudClient:
         token_type = (self._config.get("token_type") or "Bearer").strip()
         if token:
             headers["Authorization"] = f"{token_type} {token}"
-        else:
-            if self._config.get("access_key"):
-                headers["X-Access-Key"] = self._config["access_key"]
-            if self._config.get("secret_key"):
-                headers["X-Secret-Key"] = self._config["secret_key"]
-            if self._config.get("scope"):
-                headers["X-Scope"] = self._config["scope"]
+
+        # Some endpoints continue to require the access/secret key pair even
+        # when an OAuth bearer token is present, so include them whenever they
+        # are configured instead of treating them as mutually exclusive.
+        if self._config.get("access_key"):
+            headers["X-Access-Key"] = self._config["access_key"]
+        if self._config.get("secret_key"):
+            headers["X-Secret-Key"] = self._config["secret_key"]
+        if self._config.get("scope"):
+            headers["X-Scope"] = self._config["scope"]
         return headers
 
     async def fetch_devices(self) -> list[dict[str, Any]]:
@@ -102,26 +105,107 @@ class UtecCloudClient:
         return {"payload": {"devices": []}}
 
     async def send_lock(self, device_id: str, target: str) -> dict[str, Any]:
-        """Send a lock/unlock action using documented control payload shapes.
+        """Send a lock/unlock action using the documented Command payload.
 
-        The public docs show a `Uhome.Device/Control` request with an actions
-        list. Some references use `LockState`/`LOCKED` instead of
-        `Lock`/`LOCK`, so attempt both shapes (newer one first) to avoid 400s
-        from strict payload validation.
+        The published example posts a `Uhome.Device/Command` payload with a
+        device-level `command` containing `capability` and `name`. We attempt
+        that first, then fall back to earlier `Control` shapes that have been
+        observed in the field.
         """
 
         action_path = self._config.get("action_path") or "/action"
         url = urljoin(self._config["base_url"].rstrip("/") + "/", action_path.lstrip("/"))
 
-        action_attempts: list[tuple[str, str]] = [
-            ("LockState", "LOCKED" if target.lower() == "lock" else "UNLOCKED"),
-            ("Lock", target.upper()),
+        target_locked = "LOCKED" if target.lower() == "lock" else "UNLOCKED"
+        lock_keyword = "lock" if target.lower() == "lock" else "unlock"
+
+        command_payload = {
+            "header": {
+                "namespace": "Uhome.Device",
+                "name": "Command",
+                "messageId": str(uuid4()),
+                "payloadVersion": "1",
+            },
+            "payload": {
+                "devices": [
+                    {
+                        "id": device_id,
+                        "command": {
+                            "capability": "st.lock",
+                            "name": lock_keyword,
+                        },
+                    }
+                ]
+            },
+        }
+
+        target_actions: list[list[dict[str, str | dict[str, str]]]] = [
+            [
+                {
+                    "name": "LockState",
+                    "value": target_locked,
+                }
+            ],
+            [
+                {
+                    "name": "LockState",
+                    "value": {"targetState": target_locked},
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": "LOCK" if lock_keyword == "lock" else "UNLOCK",
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": {"targetState": target_locked},
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": {"state": "LOCK" if lock_keyword == "lock" else "UNLOCK"},
+                }
+            ],
+            [
+                {
+                    "name": "Lock",
+                    "value": {"value": "LOCK" if lock_keyword == "lock" else "UNLOCK"},
+                }
+            ],
         ]
         headers = {"Content-Type": "application/json", **self._headers()}
         log = logging.getLogger(__name__)
         last_exc: httpx.HTTPStatusError | None = None
 
-        for action_name, action_value in action_attempts:
+        # Try the documented Command payload first.
+        log.info("Sending %s command for %s to %s", target, device_id, url)
+        resp = await self._client.post(
+            url,
+            headers=headers,
+            json=command_payload,
+            follow_redirects=True,
+        )
+        try:
+            resp.raise_for_status()
+            try:
+                return resp.json() if resp.content else {}
+            except ValueError:
+                log.warning("Command response was not JSON: %s", resp.text[:500])
+                return {"raw": resp.text}
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text
+            detail = body or exc.response.reason_phrase
+            log.warning(
+                "Command payload failed (%s): %s", exc.response.status_code, detail[:500]
+            )
+            last_exc = exc
+
+        # Fallbacks to older Control payloads.
+        for actions in target_actions:
             payload = {
                 "header": {
                     "namespace": "Uhome.Device",
@@ -133,18 +217,13 @@ class UtecCloudClient:
                     "devices": [
                         {
                             "id": device_id,
-                            "actions": [
-                                {
-                                    "name": action_name,
-                                    "value": action_value,
-                                }
-                            ],
+                            "actions": actions,
                         }
                     ]
                 },
             }
             log.info(
-                "Sending %s control (%s=%s) for %s to %s", target, action_name, action_value, device_id, url
+                "Sending %s control (%s) for %s to %s", target, actions, device_id, url
             )
             resp = await self._client.post(
                 url,
@@ -154,11 +233,19 @@ class UtecCloudClient:
             )
             try:
                 resp.raise_for_status()
-                return resp.json() if resp.content else {}
+                try:
+                    return resp.json() if resp.content else {}
+                except ValueError:
+                    log.warning("Control response was not JSON: %s", resp.text[:500])
+                    return {"raw": resp.text}
             except httpx.HTTPStatusError as exc:
                 body = exc.response.text
+                detail = body or exc.response.reason_phrase
                 log.warning(
-                    "Control attempt %s/%s failed (%s): %s", action_name, action_value, exc.response.status_code, body[:500]
+                    "Control attempt %s failed (%s): %s",
+                    actions,
+                    exc.response.status_code,
+                    detail[:500],
                 )
                 last_exc = exc
                 continue

@@ -1,5 +1,8 @@
 # U-tec Local Gateway – Home Assistant Integration
 
+**Version: 1.3.3**
+Increment this version string in the README whenever new functionality ships so users can confirm they are on the latest documented baseline.
+
 Custom integration to expose U-tec locks via a local gateway.
 
 ## What this repo provides
@@ -61,8 +64,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 4. After approving the OAuth prompt, copy the full redirected URL from the
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh
-   tokens and use them for subsequent API calls (falling back to access/secret
-   headers only if no bearer token is saved). The UI also exposes **Manual Lock /
+  tokens and use them for subsequent API calls (the gateway now includes your
+  access/secret headers alongside the bearer token to satisfy endpoints that
+  require both). The UI also exposes **Manual Lock /
    Unlock** controls; paste a device MAC address and click **Lock** or **Unlock**
    to send the documented action payloads to the `/action` endpoint and view the
    raw cloud response inline.
@@ -83,12 +87,12 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   the documented `Uhome.Device/Query` payload to the same action endpoint and
   returns the raw cloud status response
 - `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
-  JSON body `{ "id": "<device_id>" }` post a documented
-  `Uhome.Device/Control` payload. The gateway now tries the stricter
-  `LockState`/`LOCKED|UNLOCKED` shape first and falls back to
-  `Lock`/`LOCK|UNLOCK` if the cloud returns HTTP 400, so OAuth-issued tokens
-  work against both documented payload variants. Requests are sent to the
-  configured action endpoint (defaults to `https://api.u-tec.com/action`).
+  JSON body `{ "id": "<device_id>" }` first post the documented
+  `Uhome.Device/Command` payload from the U-tec docs (with `capability`
+  `st.lock` and `name` set to `lock`/`unlock`). If the cloud rejects that, the
+  gateway automatically cycles through the older `Control` payload variants
+  (`LockState`/`Lock` shapes) before returning an error. Requests are sent to
+  the configured action endpoint (defaults to `https://api.u-tec.com/action`).
 - `GET /devices` mirrors `/api/devices` for clients that expect the non-`/api`
   path.
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`

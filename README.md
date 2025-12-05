@@ -62,7 +62,10 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh
    tokens and use them for subsequent API calls (falling back to access/secret
-   headers only if no bearer token is saved).
+   headers only if no bearer token is saved). The UI also exposes **Manual Lock /
+   Unlock** controls; paste a device MAC address and click **Lock** or **Unlock**
+   to send the documented action payloads to the `/action` endpoint and view the
+   raw cloud response inline.
 
 **Troubleshooting connectivity**
 - Run `docker compose ps` and confirm the `gateway` service is `running`.
@@ -79,9 +82,10 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 - `POST /api/status` → body `{ "devices": [{ "id": "<device_id>" }] }` posts
   the documented `Uhome.Device/Query` payload to the same action endpoint and
   returns the raw cloud status response
-- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }` posts a
-  `Uhome.Device/Lock` or `Uhome.Device/Unlock` action payload to the configured
-  action endpoint (defaults to `https://api.u-tec.com/action`)
+- `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
+  JSON body `{ "id": "<device_id>" }` post a `Uhome.Device/Lock` or
+  `Uhome.Device/Unlock` action payload to the configured action endpoint
+  (defaults to `https://api.u-tec.com/action`)
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 
 Point the Home Assistant integration at `http://<host>:8000` so it can fetch

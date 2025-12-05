@@ -109,6 +109,15 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 </div>
                 <div id="devices" class="muted">No devices fetched yet.</div>
                 <div id="status" class="muted" style="margin-top: 0.75rem;">No status fetched yet.</div>
+                <div class="section" style="margin-top: 1rem;">
+                    <strong>Manual Lock / Unlock</strong>
+                    <div class="actions" style="margin-top: 0.5rem;">
+                        <input type="text" id="lock-device-id" placeholder="Device ID (MAC, e.g. 7C:DF:A1:68:3E:6A)" style="width: 24rem;" />
+                        <button type="button" id="send-lock">Lock</button>
+                        <button type="button" id="send-unlock">Unlock</button>
+                    </div>
+                    <div id="lock-result" class="muted" style="margin-top: 0.5rem;">No lock action sent yet.</div>
+                </div>
             </div>
             <div class="logs">
                 <strong>Recent Logs</strong><br/>
@@ -259,6 +268,36 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                         statusDiv.textContent = 'Error loading status: ' + err;
                     }
                 });
+
+                async function sendLockAction(target) {
+                    const resultDiv = document.getElementById('lock-result');
+                    const deviceId = document.getElementById('lock-device-id').value.trim();
+                    if (!deviceId) {
+                        alert('Enter a device id (MAC) to send a lock/unlock command.');
+                        return;
+                    }
+                    resultDiv.textContent = 'Sending ' + target + '...';
+                    try {
+                        const resp = await fetch('/api/' + target, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: deviceId })
+                        });
+                        const payload = await resp.json();
+                        if (!resp.ok) {
+                            resultDiv.textContent = payload.detail || ('Failed to ' + target + ' device');
+                            return;
+                        }
+                        const pre = document.createElement('pre');
+                        pre.textContent = JSON.stringify(payload, null, 2);
+                        resultDiv.replaceChildren(pre);
+                    } catch (err) {
+                        resultDiv.textContent = 'Error sending ' + target + ': ' + err;
+                    }
+                }
+
+                document.getElementById('send-lock').addEventListener('click', () => sendLockAction('lock'));
+                document.getElementById('send-unlock').addEventListener('click', () => sendLockAction('unlock'));
             </script>
         </body>
         </html>
@@ -437,29 +476,47 @@ async def api_status_get(id: str | None = None) -> JSONResponse:  # type: ignore
 
 
 @app.post("/lock")
-async def api_lock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+@app.post("/api/lock")
+async def api_lock(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     device_id = str(payload.get("id")) if payload.get("id") is not None else None
     if not device_id:
         raise HTTPException(status_code=400, detail="Missing 'id'")
     client = await _with_client()
+    log = logging.getLogger(__name__)
     try:
         result = await client.send_lock(device_id, "lock")
-        logging.getLogger(__name__).info("Lock request sent to %s", device_id)
-        return result or {"status": "ok"}
+        log.info("Lock request sent to %s", device_id)
+        return JSONResponse(status_code=200, content=result or {"status": "ok"})
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text
+        log.warning("Lock failed (%s): %s", exc.response.status_code, body[:500])
+        return JSONResponse(status_code=exc.response.status_code, content={"detail": body or exc.response.reason_phrase})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.exception("Unexpected error sending lock")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         await client.aclose()
 
 
 @app.post("/unlock")
-async def api_unlock(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+@app.post("/api/unlock")
+async def api_unlock(payload: dict[str, Any] = Body(...)) -> JSONResponse:
     device_id = str(payload.get("id")) if payload.get("id") is not None else None
     if not device_id:
         raise HTTPException(status_code=400, detail="Missing 'id'")
     client = await _with_client()
+    log = logging.getLogger(__name__)
     try:
         result = await client.send_lock(device_id, "unlock")
-        logging.getLogger(__name__).info("Unlock request sent to %s", device_id)
-        return result or {"status": "ok"}
+        log.info("Unlock request sent to %s", device_id)
+        return JSONResponse(status_code=200, content=result or {"status": "ok"})
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.text
+        log.warning("Unlock failed (%s): %s", exc.response.status_code, body[:500])
+        return JSONResponse(status_code=exc.response.status_code, content={"detail": body or exc.response.reason_phrase})
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log.exception("Unexpected error sending unlock")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         await client.aclose()
 

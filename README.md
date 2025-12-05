@@ -79,7 +79,9 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
 - `POST /api/status` → body `{ "devices": [{ "id": "<device_id>" }] }` posts
   the documented `Uhome.Device/Query` payload to the same action endpoint and
   returns the raw cloud status response
-- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }`
+- `POST /lock` / `POST /unlock` with JSON body `{ "id": "<device_id>" }` posts a
+  `Uhome.Device/Lock` or `Uhome.Device/Unlock` action payload to the configured
+  action endpoint (defaults to `https://api.u-tec.com/action`)
 - `GET /logs` (text), `POST /logs/clear`, `GET /health`
 
 Point the Home Assistant integration at `http://<host>:8000` so it can fetch

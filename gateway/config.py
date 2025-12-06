@@ -7,10 +7,20 @@ from typing import Any, TypedDict
 
 class GatewayConfig(TypedDict, total=False):
     base_url: str
+    oauth_base_url: str
+    devices_path: str
+    action_path: str
     access_key: str
     secret_key: str
+    auth_code: str
+    access_token: str
+    refresh_token: str
+    token_type: str
+    token_expires_in: int
     log_level: str
     scope: str
+    redirect_url: str
+    status_poll_seconds: int
 
 
 DATA_DIR = Path("/data")
@@ -18,17 +28,75 @@ CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "gateway.log"
 
 DEFAULT_CONFIG: GatewayConfig = {
-    # U-tec Open API per public docs: https://openapi.ultraloq.com
-    "base_url": "https://openapi.ultraloq.com",
+    # U-tec Open API per public docs: https://api.u-tec.com/action
+    "base_url": "https://api.u-tec.com",
+    # Discovery action endpoint per docs: https://doc.api.u-tec.com/#db817fe1-0bfe-47f1-877d-ac02df4d2b0e
+    "action_path": "/action",
+    # Legacy configurable devices path retained for compatibility with earlier builds
+    "devices_path": "/openapi/v1/devices",
+    # OAuth host documented for auth/token flow: https://oauth.u-tec.com
+    "oauth_base_url": "https://oauth.u-tec.com",
     "access_key": "",
     "secret_key": "",
+    "auth_code": "",
+    "access_token": "",
+    "refresh_token": "",
+    "token_type": "Bearer",
+    "token_expires_in": 0,
     "log_level": "INFO",
-    "scope": "",
+    # Per docs the OAuth scope should be "openapi"
+    "scope": "openapi",
+    "redirect_url": "",
+    # Background poll interval (seconds) for auto status refresh
+    "status_poll_seconds": 60,
 }
 
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def normalize_base_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return DEFAULT_CONFIG["base_url"]
+    if "openapi.ultraloq.com" in cleaned:
+        # Migrate the legacy hostname that fails DNS resolution to the
+        # documented endpoint used by the OAuth/auth flows.
+        cleaned = cleaned.replace("openapi.ultraloq.com", "openapi.u-tec.com")
+    if "openapi.u-tec.com" in cleaned:
+        # Devices discovery uses the action endpoint on api.u-tec.com
+        cleaned = cleaned.replace("openapi.u-tec.com", "api.u-tec.com")
+    if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+        cleaned = "https://" + cleaned
+    return cleaned
+
+
+def normalize_devices_path(path: str) -> str:
+    cleaned = (path or "").strip() or DEFAULT_CONFIG["devices_path"]
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned.rstrip("/") or DEFAULT_CONFIG["devices_path"]
+
+
+def normalize_action_path(path: str) -> str:
+    cleaned = (path or "").strip() or DEFAULT_CONFIG["action_path"]
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned.rstrip("/") or DEFAULT_CONFIG["action_path"]
+
+
+def normalize_oauth_base_url(url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return DEFAULT_CONFIG["oauth_base_url"]
+    if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+        cleaned = "https://" + cleaned
+    # Previous builds saved the /login suffix; strip it to match the documented host
+    # used by /authorize and /token endpoints.
+    if cleaned.rstrip("/").endswith("/login"):
+        cleaned = cleaned.rstrip("/")[:- len("/login")]
+    return cleaned.rstrip("/")
 
 
 def load_config() -> GatewayConfig:
@@ -44,15 +112,31 @@ def load_config() -> GatewayConfig:
         config.update(loaded)
 
     # Auto-migrate old/blank hosts to the documented endpoint so name resolution
-    # errors from the legacy "openapi.u-tec.com" host are avoided.
-    normalized_base = (config.get("base_url") or "").strip()
+    # errors from the deprecated "openapi.ultraloq.com" host are avoided.
+    normalized_base = normalize_base_url(config.get("base_url", ""))
+    normalized_oauth_base = normalize_oauth_base_url(config.get("oauth_base_url", ""))
+    normalized_devices_path = normalize_devices_path(config.get("devices_path", ""))
+    normalized_action_path = normalize_action_path(config.get("action_path", ""))
     needs_save = False
-    if not normalized_base:
-        config["base_url"] = DEFAULT_CONFIG["base_url"]
+    if not config.get("base_url") or config.get("base_url") != normalized_base:
+        config["base_url"] = normalized_base
         needs_save = True
-    elif "openapi.u-tec.com" in normalized_base:
-        config["base_url"] = DEFAULT_CONFIG["base_url"]
+    if not config.get("oauth_base_url") or config.get("oauth_base_url") != normalized_oauth_base:
+        config["oauth_base_url"] = normalized_oauth_base
         needs_save = True
+    if not config.get("devices_path") or config.get("devices_path") != normalized_devices_path:
+        config["devices_path"] = normalized_devices_path
+        needs_save = True
+    if not config.get("action_path") or config.get("action_path") != normalized_action_path:
+        config["action_path"] = normalized_action_path
+        needs_save = True
+
+    # Guard against invalid poll intervals
+    interval = config.get("status_poll_seconds") or DEFAULT_CONFIG["status_poll_seconds"]
+    if not isinstance(interval, int) or interval <= 0:
+        interval = DEFAULT_CONFIG["status_poll_seconds"]
+        needs_save = True
+    config["status_poll_seconds"] = interval
 
     if needs_save:
         CONFIG_PATH.write_text(json.dumps(config, indent=2))
@@ -68,6 +152,10 @@ def save_config(config: GatewayConfig) -> None:
 __all__ = [
     "GatewayConfig",
     "DEFAULT_CONFIG",
+    "normalize_base_url",
+    "normalize_oauth_base_url",
+    "normalize_devices_path",
+    "normalize_action_path",
     "load_config",
     "save_config",
     "CONFIG_PATH",

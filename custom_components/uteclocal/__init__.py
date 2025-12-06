@@ -6,7 +6,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 
-PLATFORMS: list[str] = ["lock"]
+PLATFORMS: list[str] = ["lock", "sensor"]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

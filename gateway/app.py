@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 import re
 from pathlib import Path
 from string import Template
@@ -40,6 +42,27 @@ async def _startup() -> None:
     config = load_config()
     setup_logging(config.get("log_level", "INFO"))
     logging.getLogger(__name__).info("Gateway starting with base URL %s", config.get("base_url"))
+    global STATUS_TASK
+    if STATUS_TASK is None:
+        STATUS_TASK = asyncio.create_task(_status_poll_loop())
+
+
+def _read_readme_version() -> str:
+    readme_path = Path(__file__).resolve().parent.parent / "README.md"
+    if not readme_path.exists():
+        return "unknown"
+    pattern = re.compile(r"^\*\*Version:\s*([^*]+)\*\*", re.IGNORECASE)
+    for line in readme_path.read_text().splitlines():
+        match = pattern.search(line.strip())
+        if match:
+            return match.group(1).strip()
+    return "unknown"
+
+
+README_VERSION = _read_readme_version()
+STATUS_CACHE: dict[str, Any] = {}
+LAST_STATUS_AT: float | None = None
+STATUS_TASK: asyncio.Task | None = None
 
 
 def _read_readme_version() -> str:
@@ -83,7 +106,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 pre { background: #f4f4f4; padding: 0.75rem; border: 1px solid #ddd; overflow-x: auto; }
             </style>
         </head>
-        <body>
+        <body data-poll="$status_poll_seconds">
             <h1>U-tec Local Gateway <span class="muted">v$version</span></h1>
             <div class="muted">Version: $version (mirrors README)</div>
             <p>Configure your U-tec cloud credentials. Values are stored on disk in <code>/data/config.json</code> inside the container.</p>
@@ -92,6 +115,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 <label>OAuth Base URL<br/><input type="text" name="oauth_base_url" value="$oauth_base_url" required /></label>
                 <label>Action Endpoint Path<br/><input type="text" name="action_path" value="$action_path" placeholder="/action" /></label>
                 <label>Devices Endpoint Path<br/><input type="text" name="devices_path" value="$devices_path" placeholder="/openapi/v1/devices" /></label>
+                <label>Status Poll Interval (seconds)<br/><input type="number" name="status_poll_seconds" value="$status_poll_seconds" min="5" step="5" /></label>
                 <label>Access Key<br/><input type="text" name="access_key" value="$access_key" /></label>
                 <label>Secret Key<br/><input type="password" name="secret_key" value="$secret_key" /></label>
                 <label>Scope<br/>
@@ -124,9 +148,11 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     <button type="button" id="fetch-devices">List Devices</button>
                     <input type="text" id="status-device-id" placeholder="Device ID (e.g. 7C:DF:A1:68:3E:6A)" style="width: 22rem;" />
                     <button type="button" id="fetch-status">Query Status</button>
+                    <button type="button" id="refresh-all-status">Refresh All Status</button>
                 </div>
                 <div id="devices" class="muted">No devices fetched yet.</div>
                 <div id="status" class="muted" style="margin-top: 0.75rem;">No status fetched yet.</div>
+                <div id="status-meta" class="muted" style="margin-top: 0.35rem;"></div>
                 <div class="section" style="margin-top: 1rem;">
                     <strong>Manual Lock / Unlock</strong>
                     <div class="actions" style="margin-top: 0.5rem;">
@@ -233,8 +259,10 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                 document.getElementById('fetch-devices').addEventListener('click', async () => {
                     const devicesDiv = document.getElementById('devices');
                     const statusDiv = document.getElementById('status');
+                    const statusMeta = document.getElementById('status-meta');
                     devicesDiv.textContent = 'Loading devices...';
                     statusDiv.textContent = 'No status fetched yet.';
+                    statusMeta.textContent = '';
                     try {
                         const resp = await fetch('/api/devices');
                         const payload = await resp.json();
@@ -262,20 +290,10 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                     }
                 });
 
-                document.getElementById('fetch-status').addEventListener('click', async () => {
+                async function renderStatusResponse(resp) {
                     const statusDiv = document.getElementById('status');
-                    const deviceId = document.getElementById('status-device-id').value.trim();
-                    if (!deviceId) {
-                        alert('Enter a device id to query status.');
-                        return;
-                    }
-                    statusDiv.textContent = 'Loading status...';
+                    const statusMeta = document.getElementById('status-meta');
                     try {
-                        const resp = await fetch('/api/status', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ devices: [{ id: deviceId }] })
-                        });
                         const payload = await resp.json();
                         if (!resp.ok) {
                             statusDiv.textContent = payload.detail || 'Failed to load status';
@@ -284,10 +302,51 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
                         const pre = document.createElement('pre');
                         pre.textContent = JSON.stringify(payload, null, 2);
                         statusDiv.replaceChildren(pre);
+                        const ts = payload.last_updated ? new Date(payload.last_updated * 1000).toLocaleString() : '';
+                        statusMeta.textContent = ts ? ('Last updated: ' + ts) : '';
                     } catch (err) {
                         statusDiv.textContent = 'Error loading status: ' + err;
                     }
+                }
+
+                document.getElementById('fetch-status').addEventListener('click', async () => {
+                    const statusDiv = document.getElementById('status');
+                    const deviceId = document.getElementById('status-device-id').value.trim();
+                    if (!deviceId) {
+                        alert('Enter a device id to query status.');
+                        return;
+                    }
+                    statusDiv.textContent = 'Loading status...';
+                    const resp = await fetch('/api/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ devices: [{ id: deviceId }] })
+                    });
+                    await renderStatusResponse(resp);
                 });
+
+                document.getElementById('refresh-all-status').addEventListener('click', async () => {
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.textContent = 'Refreshing status for all devices...';
+                    const resp = await fetch('/api/status/refresh', { method: 'POST' });
+                    await renderStatusResponse(resp);
+                });
+
+                async function loadLatestStatus(auto = false) {
+                    const pollMeta = document.body.dataset.poll;
+                    const resp = await fetch('/api/status/latest');
+                    await renderStatusResponse(resp);
+                    if (auto && pollMeta) {
+                        // if the backend poll interval is set, only schedule after a successful fetch
+                    }
+                }
+
+                const pollSeconds = parseInt(document.body.dataset.poll || '0');
+                if (pollSeconds > 0) {
+                    // fire immediately, then poll on interval to keep HA/UI updated
+                    loadLatestStatus();
+                    setInterval(() => loadLatestStatus(true), pollSeconds * 1000);
+                }
 
                 async function sendLockAction(target) {
                     const resultDiv = document.getElementById('lock-result');
@@ -333,6 +392,7 @@ def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
         action_path=config.get("action_path", ""),
         redirect_url=config.get("redirect_url", ""),
         log_level=config.get("log_level", "INFO"),
+        status_poll_seconds=config.get("status_poll_seconds", 60),
         logs_html=logs_html or "No logs yet.",
         auth_code=config.get("auth_code", ""),
         token_status=token_status,
@@ -358,6 +418,7 @@ async def update_config(
     scope: str = Form(""),
     redirect_url: str = Form(""),
     log_level: str = Form("INFO"),
+    status_poll_seconds: int = Form(60),
 ) -> JSONResponse:
     existing = load_config()
     config: GatewayConfig = existing.copy()
@@ -372,6 +433,7 @@ async def update_config(
             "scope": scope,
             "redirect_url": redirect_url,
             "log_level": log_level,
+            "status_poll_seconds": max(int(status_poll_seconds or 60), 5),
         }
     )
     save_config(config)
@@ -400,6 +462,44 @@ async def health() -> dict[str, str]:
 async def _with_client() -> UtecCloudClient:
     config = load_config()
     return UtecCloudClient(config)
+
+
+async def _refresh_status_cache() -> dict[str, Any]:
+    """Poll discovery and status to keep the UI and HA endpoints fresh."""
+
+    global STATUS_CACHE, LAST_STATUS_AT
+    client = await _with_client()
+    log = logging.getLogger(__name__)
+    try:
+        devices = await client.fetch_devices()
+        device_ids = [
+            str(dev.get("id") or dev.get("device_id") or dev.get("serial_no"))
+            for dev in devices
+            if dev.get("id") or dev.get("device_id") or dev.get("serial_no")
+        ]
+        if not device_ids:
+            STATUS_CACHE = {"payload": {"devices": []}}
+            LAST_STATUS_AT = time.time()
+            log.info("Status poll: no devices discovered to query")
+            return STATUS_CACHE
+        status = await client.fetch_status(device_ids)
+        STATUS_CACHE = status
+        LAST_STATUS_AT = time.time()
+        log.info("Status poll refreshed for %d devices", len(device_ids))
+        return STATUS_CACHE
+    except Exception:
+        log.exception("Background status poll failed")
+        return STATUS_CACHE
+    finally:
+        await client.aclose()
+
+
+async def _status_poll_loop() -> None:
+    while True:
+        config = load_config()
+        interval = config.get("status_poll_seconds", 60) or 60
+        await _refresh_status_cache()
+        await asyncio.sleep(max(interval, 5))
 
 
 @app.get("/api/devices")
@@ -501,6 +601,19 @@ async def api_status_get(id: str | None = None) -> JSONResponse:  # type: ignore
     """Compatibility GET endpoint for clients (like HA) that query status via query params."""
     device_ids = _extract_device_ids({"id": id} if id else {})
     return await _fetch_status_for(device_ids)
+
+
+@app.get("/api/status/latest")
+async def api_status_latest() -> JSONResponse:
+    if not STATUS_CACHE:
+        await _refresh_status_cache()
+    return JSONResponse({"payload": STATUS_CACHE.get("payload", {}), "last_updated": LAST_STATUS_AT})
+
+
+@app.post("/api/status/refresh")
+async def api_status_refresh() -> JSONResponse:
+    status = await _refresh_status_cache()
+    return JSONResponse({"payload": status.get("payload", {}), "last_updated": LAST_STATUS_AT})
 
 
 @app.post("/lock")

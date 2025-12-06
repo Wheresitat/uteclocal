@@ -20,6 +20,7 @@ class GatewayConfig(TypedDict, total=False):
     log_level: str
     scope: str
     redirect_url: str
+    status_poll_seconds: int
 
 
 DATA_DIR = Path("/data")
@@ -46,6 +47,8 @@ DEFAULT_CONFIG: GatewayConfig = {
     # Per docs the OAuth scope should be "openapi"
     "scope": "openapi",
     "redirect_url": "",
+    # Background poll interval (seconds) for auto status refresh
+    "status_poll_seconds": 60,
 }
 
 
@@ -127,6 +130,13 @@ def load_config() -> GatewayConfig:
     if not config.get("action_path") or config.get("action_path") != normalized_action_path:
         config["action_path"] = normalized_action_path
         needs_save = True
+
+    # Guard against invalid poll intervals
+    interval = config.get("status_poll_seconds") or DEFAULT_CONFIG["status_poll_seconds"]
+    if not isinstance(interval, int) or interval <= 0:
+        interval = DEFAULT_CONFIG["status_poll_seconds"]
+        needs_save = True
+    config["status_poll_seconds"] = interval
 
     if needs_save:
         CONFIG_PATH.write_text(json.dumps(config, indent=2))

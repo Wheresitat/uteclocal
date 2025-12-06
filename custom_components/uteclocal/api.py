@@ -46,3 +46,12 @@ class UtecLocalAPI:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         return data
+
+    async def async_get_latest_statuses(self) -> dict[str, Any]:
+        """Return the latest cached status payload from the gateway poller."""
+        url = f"{self._host}/api/status/latest"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
+        return data

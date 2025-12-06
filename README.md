@@ -1,6 +1,6 @@
 # U-tec Local Gateway – Home Assistant Integration
 
-**Version: 1.3.3**
+**Version: 1.3.5**
 Increment this version string in the README whenever new functionality ships so users can confirm they are on the latest documented baseline.
 
 Custom integration to expose U-tec locks via a local gateway.
@@ -13,7 +13,8 @@ Custom integration to expose U-tec locks via a local gateway.
   secret key, scope, and redirect URL, plus buttons to trigger OAuth, list
   devices, and clear/view logs.
 - A **HACS-compatible custom integration** that talks to the gateway and
-  surfaces your locks as entities (lock/unlock, battery level, health).
+  surfaces your locks as entities (lock/unlock) plus separate sensor entities
+  for battery level and health status.
 
 ## Install via HACS
 1. Add custom repo: https://github.com/Wheresitat/uteclocal
@@ -56,11 +57,12 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
    Existing configs that still reference the deprecated `openapi.ultraloq.com`
    hostname (or the old `/login` OAuth suffix) are automatically rewritten on
    startup; refresh the UI to confirm the saved values. The settings are stored
-   in `/data/config.json` inside the volume and can be managed entirely through
-   the UI—no environment file is required. Use **List Devices** to confirm the
-   API responds with your locks, **Query Status** with a device id to fetch the
-   documented status payload for that lock, and **Clear Logs** to wipe the
-   rotating log file.
+  in `/data/config.json` inside the volume and can be managed entirely through
+  the UI—no environment file is required. Use **List Devices** to confirm the
+  API responds with your locks. **Status poll interval** controls how often the
+  gateway auto-refreshes device status in the background (default 60s). **Query
+  Status** lets you fetch a specific lock on-demand, and **Clear Logs** wipes
+  the rotating log file.
 4. After approving the OAuth prompt, copy the full redirected URL from the
    browser, paste it into the **OAuth Callback** section, click **Extract Code**, and
    then **Exchange Code**. The gateway will store the resulting access/refresh
@@ -85,7 +87,11 @@ Your locks will appear as `lock.*` entities if `/api/devices` returns them.
   `https://api.u-tec.com/action`)
 - `POST /api/status` → body `{ "devices": [{ "id": "<device_id>" }] }` posts
   the documented `Uhome.Device/Query` payload to the same action endpoint and
-  returns the raw cloud status response
+  returns the raw cloud status response.
+- `GET /api/status/latest` → returns the most recent status payload collected
+  by the background poller plus a `last_updated` timestamp (epoch seconds).
+- `POST /api/status/refresh` → triggers a fresh discovery + status poll and
+  returns the resulting payload with a timestamp.
 - `POST /lock` / `POST /unlock` (aliases at `/api/lock` and `/api/unlock`) with
   JSON body `{ "id": "<device_id>" }` first post the documented
   `Uhome.Device/Command` payload from the U-tec docs (with `capability`

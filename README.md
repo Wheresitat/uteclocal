@@ -1,7 +1,7 @@
 # U-tec Local Gateway – Home Assistant Integration
 
 **Version: 1.3.5**
-Increment this version string in the README whenever new functionality ships so users can confirm they are on the latest documented baseline.
+
 
 Custom integration to expose U-tec locks via a local gateway.
 

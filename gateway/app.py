@@ -65,6 +65,21 @@ LAST_STATUS_AT: float | None = None
 STATUS_TASK: asyncio.Task | None = None
 
 
+def _read_readme_version() -> str:
+    readme_path = Path(__file__).resolve().parent.parent / "README.md"
+    if not readme_path.exists():
+        return "unknown"
+    pattern = re.compile(r"^\*\*Version:\s*([^*]+)\*\*", re.IGNORECASE)
+    for line in readme_path.read_text().splitlines():
+        match = pattern.search(line.strip())
+        if match:
+            return match.group(1).strip()
+    return "unknown"
+
+
+README_VERSION = _read_readme_version()
+
+
 def render_index(config: GatewayConfig, log_lines: list[str]) -> str:
     logs_html = "<br>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in log_lines)
     token_status = ""
